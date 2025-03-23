@@ -1,50 +1,74 @@
-import torch
-from fastapi import FastAPI, Query
-from diffusers import StableDiffusion3Pipeline
-from PIL import Image
+import os
 import io
-import base64
+import uuid
+import boto3
+import torch
+import runpod
+from diffusers import StableDiffusion3Pipeline
+from huggingface_hub import snapshot_download
 
-# Initialize FastAPI app
-app = FastAPI()
+# Load model once when the container starts
+HF_TOKEN = os.getenv("HF_TOKEN")
+if not HF_TOKEN:
+    raise ValueError("HuggingFace token not found! Set HF_TOKEN environment variable.")
 
-# Load Stable Diffusion 3.5 Model
-model_id = "stabilityai/stable-diffusion-3.5-large"
-pipe = StableDiffusion3Pipeline.from_pretrained(
-    model_id, torch_dtype=torch.float16, variant="fp16"
+print("Downloading model...")
+model_path = snapshot_download(
+    repo_id="stabilityai/stable-diffusion-3.5-large",
+    local_dir="/runpod-volume/models",
+    token=HF_TOKEN,
+    local_dir_use_symlinks=False,
+    resume_download=True
 )
 
-# Move to CUDA if available
-device = "cuda" if torch.cuda.is_available() else "cpu"
-pipe.to(device)
+print("Loading pipeline...")
+pipe = StableDiffusion3Pipeline.from_pretrained(
+    model_path, torch_dtype=torch.bfloat16, use_safetensors=True
+)
+pipe.enable_xformers_memory_efficient_attention()
+pipe.to("cuda")
 
-# API Endpoint
-@app.get("/generate")
-def generate_image(
-    prompt: str = Query(..., description="Text prompt for image generation"),
-    steps: int = Query(15, le=150, description="Number of inference steps"),
-    guidance: float = Query(7.5, le=15.0, description="Guidance scale")
-):
-    try:
-        # Generate the image
-        image = pipe(
-            prompt,
-            num_inference_steps=steps,
-            guidance_scale=guidance,
-        ).images[0]
+print("Model loaded and ready!")
 
-        # Convert image to Base64
-        img_io = io.BytesIO()
-        image.save(img_io, format="PNG")
-        img_io.seek(0)
-        base64_img = base64.b64encode(img_io.read()).decode("utf-8")
 
-        return {"image": base64_img}
+# Handler function for serverless
+def handler(job):
+    input_data = job["input"]
+    prompt = input_data.get("prompt", "")
+    negative_prompt = input_data.get("negative_prompt", "")
+    num_inference_steps = input_data.get("num_inference_steps", 30)
+    guidance_scale = input_data.get("guidance_scale", 7.5)
 
-    except Exception as e:
-        return {"error": str(e)}
+    # Run inference
+    images = pipe(
+        prompt,
+        negative_prompt=negative_prompt,
+        num_inference_steps=num_inference_steps,
+        guidance_scale=guidance_scale
+    ).images
 
-# Root endpoint
-@app.get("/")
-def home():
-    return {"message": "Stable Diffusion 3.5 API is running!"}
+    img = images[0]
+
+    buffered = io.BytesIO()
+    img.save(buffered, format="PNG")
+    buffered.seek(0)
+
+    s3 = boto3.client(
+        "s3",
+        aws_access_key_id=os.getenv("AWS_KEY"),
+        aws_secret_access_key=os.getenv("AWS_SECRET")
+    )
+
+    bucket_name = "my-sd-output-bucket"
+    img_key = f"outputs/{uuid.uuid4()}.png"
+    s3.upload_fileobj(buffered, bucket_name, img_key, ExtraArgs={"ContentType": "image/png"})
+
+    url = s3.generate_presigned_url(
+        "get_object", Params={"Bucket": bucket_name, "Key": img_key}, ExpiresIn=3600
+    )
+
+    return {"image_url": url}
+
+
+# Start serverless worker
+runpod.serverless.start({"handler": handler})

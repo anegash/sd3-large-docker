@@ -9,13 +9,10 @@ RUN apt update && apt install -y git ffmpeg libsm6 libxext6
 
 # Install Python dependencies
 RUN pip install --upgrade pip && \
-    pip install fastapi uvicorn torch torchvision torchaudio diffusers transformers pillow
+    pip install runpod torch torchvision torchaudio diffusers transformers pillow boto3 huggingface_hub
 
-# Copy application files
+# Copy your serverless handler script and other files
 COPY . /app
 
-# Expose the FastAPI port
-EXPOSE 8000
-
-# Run the FastAPI application
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Set the default command to run your handler
+CMD ["python3", "-u", "rp_handler.py"]
