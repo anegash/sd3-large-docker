@@ -37,6 +37,15 @@ accelerate = ">=1.0.0"
 huggingface-hub = "^0.26.0"
 protobuf = "^5.0.0"
 sentencepiece = "^0.2.0"
+# LoRA training and management
+peft = "^0.8.0"
+datasets = "^2.16.0"
+sqlalchemy = "^2.0.0"
+alembic = "^1.13.0"
+aiofiles = "^23.2.0"
+celery = "^5.3.0"
+redis = "^5.0.0"
+python-multipart = "^0.0.6"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.0"
