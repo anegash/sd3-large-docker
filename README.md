@@ -1,9 +1,16 @@
-# SD3 Large API
+# Stable Diffusion 3.5 Large - RunPod Hub
 
-A professional FastAPI service for generating images using Stable Diffusion 3.5 Large with multi-platform GPU support.
+Professional-grade text-to-image generation using Stability AI's Stable Diffusion 3.5 Large model, optimized for RunPod serverless deployment and local development.
 
 ## Features
 
+### RunPod Serverless
+- ⚡ **Serverless deployment**: Ready for RunPod Hub with automatic scaling
+- 🔧 **Handler integration**: Pre-built RunPod serverless handler
+- 📋 **Complete metadata**: Hub.json with presets and configuration
+- 🧪 **Test suite**: Comprehensive test cases for validation
+
+### Core Features  
 - 🚀 **Multi-platform GPU support**: Automatic detection and optimization for CUDA (NVIDIA), MPS (Apple Silicon), and CPU
 - 🎨 **Stable Diffusion 3.5 Large**: State-of-the-art image generation using the latest SD3.5 model
 - 🔑 **HuggingFace integration**: Automated authentication handling for gated models
@@ -25,7 +32,46 @@ SD3.5 Large is a gated model requiring HuggingFace authentication:
 
 The setup script will guide you through this process.
 
-## Quick Start
+## RunPod Deployment
+
+### Quick Deploy to RunPod Hub
+
+1. **Fork/Clone Repository**: Get your own copy of this repository
+2. **Configure Secrets**: Set `HUGGINGFACE_TOKEN` in RunPod environment  
+3. **Build Container**: RunPod will build from the included Dockerfile
+4. **Deploy**: Use the pre-configured hub.json settings
+
+### RunPod Serverless Usage
+
+```json
+{
+  "input": {
+    "prompt": "a beautiful sunset over mountains",
+    "steps": 20,
+    "guidance": 7.5,
+    "width": 1024,
+    "height": 1024
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "image": "base64_encoded_png_data",
+  "seed": 42,
+  "format": "png"
+}
+```
+
+### Available Presets
+
+- **High Quality**: 30 steps, guidance 7.5 for detailed artwork
+- **Fast Generation**: 20 steps, guidance 5.0 for quick results  
+- **Portrait**: 768×1024 optimized for characters/faces
+- **Landscape**: 1024×768 optimized for scenic views
+
+## Local Development
 
 ### Installation
 

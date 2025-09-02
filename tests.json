@@ -1,0 +1,117 @@
+{
+  "tests": [
+    {
+      "name": "Basic Image Generation",
+      "description": "Test basic text-to-image generation with default settings",
+      "input": {
+        "prompt": "a red apple on a wooden table",
+        "steps": 20,
+        "guidance": 7.5,
+        "width": 1024,
+        "height": 1024
+      },
+      "timeout": 120,
+      "expectedOutputs": {
+        "image": "string",
+        "seed": "number",
+        "format": "string"
+      }
+    },
+    {
+      "name": "High Quality Generation",
+      "description": "Test high quality generation with more steps",
+      "input": {
+        "prompt": "a majestic dragon flying over a medieval castle at sunset",
+        "steps": 30,
+        "guidance": 8.0,
+        "width": 1024,
+        "height": 1024
+      },
+      "timeout": 180,
+      "expectedOutputs": {
+        "image": "string",
+        "seed": "number",
+        "format": "string"
+      }
+    },
+    {
+      "name": "Portrait Aspect Ratio",
+      "description": "Test portrait-oriented image generation",
+      "input": {
+        "prompt": "portrait of a wise old wizard with a long white beard",
+        "steps": 25,
+        "guidance": 7.0,
+        "width": 768,
+        "height": 1024
+      },
+      "timeout": 150,
+      "expectedOutputs": {
+        "image": "string",
+        "seed": "number",
+        "format": "string"
+      }
+    },
+    {
+      "name": "Landscape Aspect Ratio",
+      "description": "Test landscape-oriented image generation",
+      "input": {
+        "prompt": "vast mountain landscape with snow-capped peaks and a clear blue sky",
+        "steps": 25,
+        "guidance": 7.0,
+        "width": 1024,
+        "height": 768
+      },
+      "timeout": 150,
+      "expectedOutputs": {
+        "image": "string",
+        "seed": "number",
+        "format": "string"
+      }
+    },
+    {
+      "name": "Fixed Seed Generation",
+      "description": "Test reproducible generation with fixed seed",
+      "input": {
+        "prompt": "a cute cat sitting in a flower garden",
+        "steps": 20,
+        "guidance": 7.5,
+        "width": 1024,
+        "height": 1024,
+        "seed": 42
+      },
+      "timeout": 120,
+      "expectedOutputs": {
+        "image": "string",
+        "seed": 42,
+        "format": "string"
+      }
+    },
+    {
+      "name": "Fast Generation",
+      "description": "Test fast generation with minimal steps",
+      "input": {
+        "prompt": "a simple geometric pattern with bright colors",
+        "steps": 15,
+        "guidance": 5.0,
+        "width": 512,
+        "height": 512
+      },
+      "timeout": 60,
+      "expectedOutputs": {
+        "image": "string",
+        "seed": "number",
+        "format": "string"
+      }
+    }
+  ],
+  "environment": {
+    "cuda": ["11.8", "12.1", "12.2"],
+    "python": "3.11",
+    "gpu": "required"
+  },
+  "requirements": [
+    "HUGGINGFACE_TOKEN environment variable must be set",
+    "Minimum 16GB GPU memory required",
+    "Model will be downloaded on first run (~8GB)"
+  ]
+}

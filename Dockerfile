@@ -17,8 +17,9 @@ RUN poetry config virtualenvs.create false
 # Copy Poetry configuration files
 COPY pyproject.toml poetry.lock* /app/
 
-# Install dependencies
-RUN poetry install --only main --no-interaction --no-ansi
+# Install dependencies including runpod
+RUN poetry install --only main --no-interaction --no-ansi && \
+    pip install runpod
 
 # Copy application files
 COPY . /app
@@ -26,5 +27,6 @@ COPY . /app
 # Expose the FastAPI port
 EXPOSE 8000
 
-# Run the FastAPI application
-CMD ["python", "main.py"]
+# Run the RunPod handler for serverless deployment
+# For local development, use: CMD ["python", "main.py"]
+CMD ["python", "handler.py"]
