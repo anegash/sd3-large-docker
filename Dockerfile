@@ -7,9 +7,18 @@ WORKDIR /app
 # Install system dependencies
 RUN apt update && apt install -y git ffmpeg libsm6 libxext6
 
-# Install Python dependencies
+# Install Poetry
 RUN pip install --upgrade pip && \
-    pip install fastapi uvicorn torch torchvision torchaudio diffusers transformers pillow
+    pip install poetry
+
+# Configure Poetry
+RUN poetry config virtualenvs.create false
+
+# Copy Poetry configuration files
+COPY pyproject.toml poetry.lock* /app/
+
+# Install dependencies
+RUN poetry install --only main --no-interaction --no-ansi
 
 # Copy application files
 COPY . /app
@@ -18,4 +27,4 @@ COPY . /app
 EXPOSE 8000
 
 # Run the FastAPI application
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["python", "main.py"]
