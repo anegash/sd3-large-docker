@@ -4,71 +4,84 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a professionally structured Docker-based Stable Diffusion 3.5 Large image generation API service. The project follows modern Python packaging standards with:
+This is a professionally structured Docker-based Stable Diffusion 3.5 Large image generation API service. The project follows modern Python packaging standards with Poetry dependency management:
 
 - **src/sd3_api/**: Main package with modular architecture
 - **main.py**: Entry point for the server
-- **pyproject.toml**: Modern Python packaging configuration
-- **requirements.txt**: Dependencies specification
-- **Dockerfile**: Container configuration using RunPod PyTorch base image
+- **pyproject.toml**: Poetry configuration with dependencies and dev tools
+- **poetry.lock**: Locked dependencies for reproducible builds
+- **setup_huggingface.py**: HuggingFace authentication setup script
+- **setup_env.sh**: Automated Poetry environment setup
+- **Dockerfile**: Container configuration using Poetry for dependency management
 
 ## Architecture
 
 The application uses a modular FastAPI architecture:
 - **api.py**: FastAPI application and endpoint definitions
-- **pipeline.py**: SD3 pipeline management with device detection
+- **pipeline.py**: SD3 pipeline management with device detection and HuggingFace auth
 - **device.py**: Multi-platform device detection (CUDA/MPS/CPU)
 - **models.py**: Pydantic models for request/response validation
 - **config.py**: Configuration constants and settings
-- Model loading happens at startup with automatic device optimization
-- Supports both GET and POST endpoints for image generation
-- GPU acceleration via CUDA (NVIDIA) or MPS (Apple Silicon) with CPU fallback
-- Model: `stabilityai/stable-diffusion-3.5-large` with automatic precision handling
+- **Eager model loading**: Downloads and loads SD3.5 Large at server startup (not on first request)
+- **Real-time progress**: Health endpoint shows loading status with live updates
+- **HuggingFace authentication**: Automatic token handling for gated models
+- **Multi-platform GPU support**: CUDA (NVIDIA) or MPS (Apple Silicon) with CPU fallback
+- **Model**: `stabilityai/stable-diffusion-3.5-large` with automatic precision handling
 
 ## Common Commands
 
 ### Development Setup
 ```bash
-# Install dependencies
-pip install -r requirements.txt
+# Automatic setup (recommended)
+./setup_env.sh
 
-# Install in development mode
-pip install -e .
+# Set up HuggingFace authentication for SD3.5 Large
+poetry run python setup_huggingface.py
 
-# Run the server
-python main.py
+# Manual setup
+poetry install --only main
+poetry install --with dev  # for development tools
 
-# Alternative: Run with uvicorn directly
-uvicorn src.sd3_api.api:app --host 0.0.0.0 --port 8000
+# Run the server (eager loads model at startup)
+poetry run python main.py
+
+# Alternative: Direct uvicorn
+poetry run uvicorn src.sd3_api.api:app --host 0.0.0.0 --port 8000
 ```
 
 ### Code Quality
 ```bash
 # Install development dependencies
-pip install -e ".[dev]"
+poetry install --with dev
 
 # Format code
-black src/ main.py
+poetry run black src/ main.py
 
 # Sort imports
-isort src/ main.py
+poetry run isort src/ main.py
 
 # Lint code
-flake8 src/ main.py
+poetry run flake8 src/ main.py
 
 # Type checking
-mypy src/ main.py
+poetry run mypy src/ main.py
+
+# Run all quality checks
+poetry run black src/ main.py && poetry run isort src/ main.py && poetry run flake8 src/ main.py
 ```
 
 ### Docker
 ```bash
-# Build the container
+# Build the container (uses Poetry internally)
 docker build -t sd3-large-api .
 
-# Run with GPU (NVIDIA)
-docker run --gpus all -p 8000:8000 sd3-large-api
+# Run with GPU (NVIDIA) - requires HuggingFace token as env var
+docker run --gpus all -e HUGGINGFACE_TOKEN=your_token -p 8000:8000 sd3-large-api
 
 # Run with Apple Silicon MPS or CPU fallback
+docker run -e HUGGINGFACE_TOKEN=your_token -p 8000:8000 sd3-large-api
+
+# Without token (will fail for SD3.5 Large)
 docker run -p 8000:8000 sd3-large-api
 ```
 
@@ -94,10 +107,13 @@ curl -X POST "http://localhost:8000/generate" \
 - Different model variants loaded based on device capabilities
 
 ### API Features
-- Comprehensive request/response validation with Pydantic
-- Proper HTTP status codes and error handling
-- Both GET and POST endpoints for flexibility
-- OpenAPI documentation available at `/docs`
+- **Eager loading**: Model loads at server startup, not on first request
+- **Loading progress**: Health endpoint shows real-time loading status
+- **HuggingFace auth**: Automatic token handling for gated models
+- **Comprehensive validation**: Pydantic request/response models
+- **Proper error handling**: HTTP status codes with meaningful messages
+- **Dual endpoints**: Both GET and POST for `/generate`
+- **OpenAPI docs**: Available at `/docs` with interactive testing
 
 ### Project Structure
 ```
@@ -112,3 +128,15 @@ src/sd3_api/
 
 ### Configuration
 All configuration is centralized in `config.py` including model settings, API defaults, and server configuration. Device-specific optimizations are handled automatically.
+
+### Authentication Requirements
+- **SD3.5 Large**: Requires HuggingFace account + token + model access approval
+- **Setup script**: `poetry run python setup_huggingface.py` guides through process
+- **Token storage**: Saved in `.env` file (gitignored) for local development
+- **Docker deployment**: Pass token via `HUGGINGFACE_TOKEN` environment variable
+
+### Loading Process
+1. **Server startup**: FastAPI starts in ~3 seconds
+2. **Background loading**: Model downloads (~8GB) and loads automatically
+3. **Progress monitoring**: Check health endpoint for real-time status
+4. **Ready state**: API accepts generation requests once loading completes
