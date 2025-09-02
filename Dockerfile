@@ -17,16 +17,26 @@ RUN poetry config virtualenvs.create false
 # Copy Poetry configuration files
 COPY pyproject.toml poetry.lock* /app/
 
-# Install dependencies including runpod
-RUN poetry install --only main --no-interaction --no-ansi && \
+# Install all dependencies including LoRA training (dev includes training deps)
+RUN poetry install --with dev --no-interaction --no-ansi && \
     pip install runpod
 
 # Copy application files
 COPY . /app
 
-# Expose the FastAPI port
-EXPOSE 8000
+# Install Redis for Celery (needed for LoRA training)
+RUN apt update && apt install -y redis-server
 
-# Run the RunPod handler for serverless deployment
-# For local development, use: CMD ["python", "main.py"]
-CMD ["python", "handler.py"]
+# Create directories for persistent data
+RUN mkdir -p /app/data /app/logs
+
+# Expose ports for API and Celery monitoring
+EXPOSE 8000 5555
+
+# Make startup script executable
+RUN chmod +x /app/start_pod.sh 2>/dev/null || true
+
+# Default to Pod startup (includes API + Celery)
+# For serverless: CMD ["python", "handler.py"]
+# For local dev: CMD ["python", "main.py"]
+CMD ["/app/start_pod.sh"]

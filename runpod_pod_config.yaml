@@ -1,0 +1,112 @@
+# RunPod Pod Configuration for SD3.5 Large LoRA Training System
+# Deploy this as a persistent Pod for full LoRA training capabilities
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: sd3-lora-training-pod
+  labels:
+    app: sd3-lora-api
+    version: "1.0"
+spec:
+  containers:
+  - name: sd3-lora-api
+    image: sd3-lora-training:latest  # Built from Dockerfile
+    ports:
+    - containerPort: 8000
+      name: api-port
+    - containerPort: 5555
+      name: celery-monitor
+    env:
+    - name: HUGGINGFACE_TOKEN
+      valueFrom:
+        secretKeyRef:
+          name: huggingface-token
+          key: token
+    - name: CUDA_VISIBLE_DEVICES
+      value: "0"
+    - name: PYTORCH_CUDA_ALLOC_CONF
+      value: "max_split_size_mb:512"
+    resources:
+      requests:
+        memory: "16Gi"
+        cpu: "4"
+        nvidia.com/gpu: 1
+      limits:
+        memory: "32Gi"
+        cpu: "8"
+        nvidia.com/gpu: 1
+    volumeMounts:
+    - name: model-cache
+      mountPath: /app/.cache
+    - name: lora-storage
+      mountPath: /app/data
+    - name: temp-storage
+      mountPath: /tmp
+    command: ["/app/start_pod.sh"]
+    readinessProbe:
+      httpGet:
+        path: /
+        port: 8000
+      initialDelaySeconds: 30
+      periodSeconds: 10
+    livenessProbe:
+      httpGet:
+        path: /
+        port: 8000
+      initialDelaySeconds: 60
+      periodSeconds: 30
+  volumes:
+  - name: model-cache
+    persistentVolumeClaim:
+      claimName: model-cache-pvc
+  - name: lora-storage
+    persistentVolumeClaim:
+      claimName: lora-storage-pvc
+  - name: temp-storage
+    emptyDir:
+      sizeLimit: "10Gi"
+  restartPolicy: Always
+
+---
+# Persistent Volume Claims for model and LoRA storage
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: model-cache-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Gi  # For SD3.5 Large model cache
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: lora-storage-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Gi  # For LoRA models and training data
+
+---
+# Service to expose the API
+apiVersion: v1
+kind: Service
+metadata:
+  name: sd3-lora-api-service
+spec:
+  selector:
+    app: sd3-lora-api
+  ports:
+  - port: 8000
+    targetPort: 8000
+    name: api
+  - port: 5555
+    targetPort: 5555
+    name: celery-monitor
+  type: LoadBalancer

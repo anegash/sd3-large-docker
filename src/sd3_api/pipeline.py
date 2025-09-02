@@ -39,8 +39,8 @@ class SD3Pipeline:
         logger.info("Initializing Stable Diffusion 3.5 Large pipeline...")
         
         try:
-            # Check for HuggingFace authentication
-            hf_token = os.getenv("HUGGINGFACE_TOKEN")
+            # Check for HuggingFace authentication (support both HF_TOKEN and HUGGINGFACE_TOKEN)
+            hf_token = os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACE_TOKEN")
             if hf_token:
                 logger.info("Using HuggingFace token from environment")
                 login(token=hf_token, add_to_git_credential=True)
