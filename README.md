@@ -1,5 +1,7 @@
 # Stable Diffusion 3.5 Large - RunPod Hub
 
+[![Runpod](https://api.runpod.io/badge/anegash/sd3-large-docker)](https://console.runpod.io/hub/anegash/sd3-large-docker)
+
 Professional-grade text-to-image generation using Stability AI's Stable Diffusion 3.5 Large model, optimized for RunPod serverless deployment and local development.
 
 ## Features
