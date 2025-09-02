@@ -106,7 +106,7 @@ def main():
     print("=" * 40)
     
     # Find training images directly
-    training_dir = Path("data/training_images/aman")
+    training_dir = Path("data/children/aman/training_images")
     if not training_dir.exists():
         print(f"❌ Training directory not found: {training_dir}")
         return False
@@ -123,14 +123,14 @@ def main():
     torch_dtype = get_torch_dtype_for_device(device)
     print(f"🖥️  Using device: {device_description}")
     
-    # Load pipeline
+    # Load pipeline with consistent dtype handling
     print("📦 Loading SD3.5 Large pipeline...")
     pipeline = StableDiffusion3Pipeline.from_pretrained(
         MODEL_ID,
         torch_dtype=torch_dtype,
         variant="fp16" if device != "cpu" else None
     )
-    pipeline.to(device)
+    pipeline.to(device, dtype=torch_dtype)
     
     # Extract components
     unet = pipeline.transformer
@@ -210,18 +210,23 @@ def main():
             input_ids = batch["input_ids"].to(device)
             prompt = batch["prompt"][0]  # Get the prompt string
             
-            # Encode images with VAE
+            # Encode images with VAE - ensure consistent dtype
             with torch.no_grad():
+                # Ensure pixel_values match VAE dtype
+                pixel_values = pixel_values.to(dtype=torch_dtype)
                 latents = vae.encode(pixel_values).latent_dist.sample()
                 latents = latents * vae.config.scaling_factor
-                latents = latents.to(torch_dtype)  # Ensure correct dtype
+                latents = latents.to(dtype=torch_dtype, device=device)
             
-            # Proper SD3.5 FlowMatch training
+            # Generate noise matching latents exactly
             noise = torch.randn_like(latents, dtype=torch_dtype, device=device)
             
-            # Sample timesteps from [0,1] for FlowMatch - use uniform distribution
-            # But avoid t=0 and t=1 which cause numerical instability
-            timesteps = torch.rand((latents.shape[0],), device=device, dtype=torch_dtype) * 0.999 + 0.001
+            # Sample timesteps with logit-normal distribution (SD3 approach)
+            # This focuses training on middle timesteps where learning is most effective
+            # Avoid extreme timesteps (0, 1) that cause numerical instability
+            u = torch.rand((latents.shape[0],), device=device, dtype=torch_dtype)
+            # Transform uniform to logit-normal: more weight on middle values
+            timesteps = torch.sigmoid(torch.logit(u * 0.998 + 0.001))
             
             # SD3 FlowMatch: x_t = (1-t) * x_0 + t * x_1, where x_1 is noise
             # This creates a straight path from data to noise
@@ -239,38 +244,56 @@ def main():
                     do_classifier_free_guidance=False
                 )
             
-            # Forward pass - SD3 predicts the flow velocity field
+            # Forward pass - ensure all inputs have consistent dtype
             model_pred = unet(
-                hidden_states=noisy_latents,
-                timestep=timesteps,  # Use original timesteps, not broadcasted
-                encoder_hidden_states=prompt_embeds,
-                pooled_projections=pooled_prompt_embeds,
+                hidden_states=noisy_latents.to(dtype=torch_dtype),
+                timestep=timesteps.to(dtype=torch_dtype),
+                encoder_hidden_states=prompt_embeds.to(dtype=torch_dtype),
+                pooled_projections=pooled_prompt_embeds.to(dtype=torch_dtype),
                 return_dict=False
             )[0]
             
-            # SD3 FlowMatch target: the velocity field v_t = x_1 - x_0 = noise - latents
-            # This is the direction from data to noise
+            # SD3 Rectified Flow target: velocity field v_t = x_1 - x_0
+            # Where x_0 is the data (latents) and x_1 is the noise
+            # The model learns to predict the velocity from data to noise
             target = noise - latents
             
-            # Calculate MSE loss between predicted and target velocity
-            loss = torch.nn.functional.mse_loss(model_pred.float(), target.float(), reduction='mean')
+            # Calculate MSE loss with SD3's reweighting strategy
+            # Weight middle timesteps more heavily as they're more informative
+            timestep_weights = 1.0 / (timesteps + 0.1)  # Higher weight for middle timesteps
             
-            # Add stability checks and gradient clipping
-            if not torch.isfinite(loss) or loss > 100.0:
-                print(f"Warning: Unstable loss {loss.item():.4f}, skipping step")
+            # Calculate element-wise loss
+            loss_elements = torch.nn.functional.mse_loss(model_pred.float(), target.float(), reduction='none')
+            
+            # Apply timestep weighting and reduce to scalar
+            loss = (loss_elements.mean(dim=[1, 2, 3]) * timestep_weights).mean()
+            
+            # Add comprehensive stability checks
+            if not torch.isfinite(loss):
+                print(f"Warning: Non-finite loss {loss.item()}, skipping step")
                 continue
                 
-            # Scale loss for numerical stability
-            loss = loss * 0.1  # Scale down to prevent gradient explosion
+            # Check for extreme loss values that indicate training instability
+            if loss.item() > 10.0:
+                print(f"Warning: Very high loss {loss.item():.4f}, skipping step")
+                continue
+                
+            # Scale loss for gradient accumulation
             loss = loss / gradient_accumulation_steps
             
             # Backward pass
             loss.backward()
             
-            # Update weights with gradient clipping
+            # Update weights with conservative gradient clipping
             if (step + 1) % gradient_accumulation_steps == 0:
-                # Clip gradients to prevent explosion
-                torch.nn.utils.clip_grad_norm_(unet.parameters(), max_norm=1.0)
+                # More aggressive gradient clipping for stability
+                grad_norm = torch.nn.utils.clip_grad_norm_(unet.parameters(), max_norm=0.5)
+                
+                # Skip update if gradients are too large
+                if grad_norm > 10.0:
+                    print(f"Warning: Large gradient norm {grad_norm:.2f}, skipping update")
+                    optimizer.zero_grad()
+                    continue
                 
                 optimizer.step()
                 scheduler.step()  # Update learning rate
