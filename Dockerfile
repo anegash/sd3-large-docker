@@ -17,8 +17,10 @@ RUN poetry config virtualenvs.create false
 # Copy Poetry configuration files
 COPY pyproject.toml poetry.lock* /app/
 
-# Install dependencies including runpod
-RUN poetry install --only main --no-interaction --no-ansi && \
+# Clear pip cache and install dependencies
+RUN pip cache purge && \
+    poetry cache clear pypi --all && \
+    poetry install --only main --no-interaction --no-ansi --verbose && \
     pip install runpod
 
 # Copy application files
