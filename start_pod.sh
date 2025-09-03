@@ -20,10 +20,10 @@ export PYTHONPATH="/app/src:$PYTHONPATH"
 export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-"0"}
 export PYTHONUNBUFFERED=1  # Force Python to flush output immediately
 
-# Set HuggingFace cache directory to persistent volume location
-export HF_HOME="/volume/.cache/huggingface"
-export TRANSFORMERS_CACHE="/volume/.cache/huggingface/hub"
-export HF_DATASETS_CACHE="/volume/.cache/huggingface/datasets"
+# Set HuggingFace cache directory to persistent workspace location
+export HF_HOME="/workspace/.cache/huggingface"
+export TRANSFORMERS_CACHE="/workspace/.cache/huggingface/hub"
+export HF_DATASETS_CACHE="/workspace/.cache/huggingface/datasets"
 
 echo "📦 Environment Variables:"
 echo "   PYTHONPATH: $PYTHONPATH"
@@ -34,10 +34,10 @@ echo "   HF_HOME: $HF_HOME"
 echo "   TRANSFORMERS_CACHE: $TRANSFORMERS_CACHE"
 
 # Create required directories
-mkdir -p /volume/data/children /volume/logs /volume/.cache/huggingface /app/logs
-# Create symlinks from app to volume for compatibility
-ln -sf /volume/data /app/data 2>/dev/null || true
-ln -sf /volume/logs /app/volume_logs 2>/dev/null || true
+mkdir -p /workspace/data/children /workspace/logs /workspace/.cache/huggingface /app/logs
+# Create symlinks from app to workspace for compatibility
+ln -sf /workspace/data /app/data 2>/dev/null || true
+ln -sf /workspace/logs /app/workspace_logs 2>/dev/null || true
 
 echo "📁 Created data directories"
 
@@ -78,7 +78,7 @@ celery -A src.sd3_api.tasks.celery_app worker \
     --loglevel=info \
     --concurrency=1 \
     --queues=training \
-    --logfile=/volume/logs/celery.log \
+    --logfile=/workspace/logs/celery.log \
     --detach
 
 # Note: Skipping Celery Flower as it's not installed in this version
@@ -122,13 +122,13 @@ python -m uvicorn src.sd3_api.api:app \
     --port 8000 \
     --workers 1 \
     --log-level debug \
-    --access-log 2>&1 | tee /volume/logs/uvicorn.log
+    --access-log 2>&1 | tee /workspace/logs/uvicorn.log
 
 # If uvicorn fails, show the error and keep container alive for debugging
 if [ $? -ne 0 ]; then
     echo "❌ Uvicorn failed to start. Error details above."
     echo "📝 Last 50 lines of log:"
-    tail -50 /volume/logs/uvicorn.log 2>/dev/null || echo "No log file found"
+    tail -50 /workspace/logs/uvicorn.log 2>/dev/null || echo "No log file found"
     echo "🔄 Keeping container alive for debugging..."
     sleep 3600
 fi

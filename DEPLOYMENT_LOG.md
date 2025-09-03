@@ -34,8 +34,8 @@ Successfully created a production-ready Docker-based SD3.5 Large image generatio
 
 ### 3. **Volume Persistence Setup**
 - **Problem**: Models downloading on every restart (8GB each time)
-- **Solution**: Configured proper volume paths for RunPod's `/volume` mount
-- **Changes**: Updated all cache directories to use `/volume/` instead of `/app/`
+- **Solution**: Configured proper workspace paths for RunPod's `/workspace` mount
+- **Changes**: Updated all cache directories to use `/workspace/` instead of `/app/`
 
 ### 4. **Celery Flower Compatibility**
 - **Problem**: `celery flower` command not available in installed version
@@ -110,7 +110,7 @@ sudo docker push antenehmtk/sd3-docker-lazy-lora:latest
 
 ### Storage Layout
 ```
-/volume/                           # Persistent RunPod volume
+/workspace/                        # Persistent RunPod workspace
 ├── .cache/huggingface/           # SD3.5 Large model cache (8GB)
 │   └── hub/                      # HuggingFace transformers cache
 ├── data/                         # Application data
@@ -127,7 +127,7 @@ sudo docker push antenehmtk/sd3-docker-lazy-lora:latest
 ├── src/sd3_api/                 # Python package
 ├── start_pod.sh                 # Startup script
 ├── pyproject.toml               # Poetry config
-└── data -> /volume/data         # Symlink to persistent storage
+└── data -> /workspace/data      # Symlink to persistent storage
 ```
 
 ### Key Environment Variables
@@ -141,9 +141,9 @@ PYTHONPATH="/app/src:$PYTHONPATH"
 PYTHONUNBUFFERED=1
 
 # HuggingFace Cache Directories
-HF_HOME="/volume/.cache/huggingface"
-TRANSFORMERS_CACHE="/volume/.cache/huggingface/hub"
-HF_DATASETS_CACHE="/volume/.cache/huggingface/datasets"
+HF_HOME="/workspace/.cache/huggingface"
+TRANSFORMERS_CACHE="/workspace/.cache/huggingface/hub"
+HF_DATASETS_CACHE="/workspace/.cache/huggingface/datasets"
 ```
 
 ### Startup Sequence
