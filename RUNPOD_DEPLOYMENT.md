@@ -17,19 +17,30 @@ This deployment provides a **persistent environment** with:
 
 ### Step 1: Push to Container Registry
 
-```bash
-# Build the container locally
-docker build -t your-registry/sd3-lora-training:latest .
+**Development Workflow**: Since Docker builds can't be done locally on Mac, we use EC2 for building and pushing to Docker Hub:
 
-# Push to your container registry (Docker Hub, etc.)
-docker push your-registry/sd3-lora-training:latest
+```bash
+# On Mac: Sync files to EC2 (since git is not available on EC2)
+rsync -avz --exclude='.git' --exclude='__pycache__' --exclude='*.pyc' \
+  ./sd3-large-docker/ \
+  ubuntu@ec2-35-173-103-83.compute-1.amazonaws.com:/home/ubuntu/sd3-large-docker/
+
+# SSH into EC2 instance
+ssh ubuntu@ec2-35-173-103-83.compute-1.amazonaws.com
+
+# On EC2: Build and push to Docker Hub
+cd /home/ubuntu/sd3-large-docker
+docker build -t antenehmtk/sd3-docker-lazy-lora:latest .
+docker push antenehmtk/sd3-docker-lazy-lora:latest
 ```
+
+**RunPod Auto-Update**: RunPod will automatically pull the latest image when you restart/recreate the Pod, so any changes pushed to Docker Hub will be reflected.
 
 ### Step 2: Create RunPod Pod
 
 1. **Go to RunPod Console**: https://console.runpod.io/
 2. **Create Pod** → Select **A40** GPU
-3. **Container Image**: `your-registry/sd3-lora-training:latest`
+3. **Container Image**: `antenehmtk/sd3-docker-lazy-lora:latest`
 4. **Container Disk**: 50GB minimum
 5. **Volume Disk**: 100GB minimum (for models/data)
 6. **Environment Variables**:
@@ -57,30 +68,41 @@ docker push your-registry/sd3-lora-training:latest
 
 #### 1. Prepare Container
 
+**Testing Workflow**: Mac → EC2 → Docker Hub → RunPod
+
 ```bash
-# Clone repository
-git clone <your-repo>
-cd sd3-large-docker
+# On Mac: Sync files to EC2 using rsync
+rsync -avz --exclude='.git' --exclude='__pycache__' --exclude='*.pyc' \
+  ./sd3-large-docker/ \
+  ubuntu@ec2-35-173-103-83.compute-1.amazonaws.com:/home/ubuntu/sd3-large-docker/
 
-# Build with correct tag
-docker build -t your-registry/sd3-lora-training:latest .
+# SSH into EC2 instance
+ssh ubuntu@ec2-35-173-103-83.compute-1.amazonaws.com
 
-# Test locally (optional)
+# On EC2: Build and push to Docker Hub
+cd /home/ubuntu/sd3-large-docker
+
+# Build with specific tag for our Docker Hub repo
+docker build -t antenehmtk/sd3-docker-lazy-lora:latest .
+
+# Test locally on EC2 (optional)
 docker run --gpus all \
   -e HUGGINGFACE_TOKEN=your_token \
   -p 8000:8000 \
   -p 5555:5555 \
-  your-registry/sd3-lora-training:latest
+  antenehmtk/sd3-docker-lazy-lora:latest
 
-# Push to registry
-docker push your-registry/sd3-lora-training:latest
+# Push to Docker Hub
+docker push antenehmtk/sd3-docker-lazy-lora:latest
 ```
+
+**Note**: Mac cannot build Docker images for this project, so EC2 is used for building and pushing. Since git is not available on EC2, we use rsync to sync files from Mac. RunPod automatically pulls the latest image when Pods are restarted.
 
 #### 2. Configure RunPod Pod
 
 **Pod Configuration:**
 - **Name**: `sd3-lora-training`
-- **Image**: `your-registry/sd3-lora-training:latest`
+- **Image**: `antenehmtk/sd3-docker-lazy-lora:latest`
 - **GPU**: RTX A40 (48GB VRAM recommended)
 - **CPU**: 8+ cores
 - **RAM**: 32GB minimum
@@ -224,12 +246,27 @@ nvidia-smi
 # Ensure CUDA_VISIBLE_DEVICES=0 is set
 ```
 
-#### 3. Training Jobs Stuck
+#### 3. Training Jobs Stuck or Failing
 ```bash
-# Check Celery worker status
-curl https://your-pod-5555.proxy.runpod.net/
-# Restart Pod if needed
+# Test if Celery worker is functioning
+curl -X POST https://your-pod-8000.proxy.runpod.net/lora/debug/test-celery
+
+# Check Celery worker information
+curl https://your-pod-8000.proxy.runpod.net/lora/debug/celery-info
+
+# Monitor task status using the task_id from test-celery response
+curl https://your-pod-8000.proxy.runpod.net/lora/debug/task-status/TASK_ID_HERE
+
+# Check Celery worker logs
+# SSH into Pod or check RunPod logs
+tail -f /workspace/logs/celery.log
 ```
+
+**Common Training Failures:**
+- **No error message**: Celery worker not processing tasks → Check worker status and restart if needed
+- **Pipeline loading errors**: GPU memory issues → Restart Pod to clear VRAM
+- **Dataset errors**: Insufficient images or corrupted files → Check uploaded images
+- **LoRA setup errors**: PEFT library issues → Check compatibility and dependencies
 
 #### 4. Out of Memory
 ```bash

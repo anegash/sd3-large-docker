@@ -18,7 +18,7 @@ RUN poetry config virtualenvs.create false
 COPY pyproject.toml poetry.lock* /app/
 
 # Install all dependencies including LoRA training (dev includes training deps)
-RUN poetry install --with dev --no-interaction --no-ansi && \
+RUN poetry install --with dev --no-interaction --no-ansi --no-root && \
     pip install runpod
 
 # Copy application files

@@ -38,7 +38,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="SD3 Large LoRA API",
     description="Stable Diffusion 3.5 Large image generation service with LoRA training",
-    version="0.2.0",
+    version="0.3.0",
     lifespan=lifespan,
 )
 
@@ -85,8 +85,33 @@ async def health_check() -> HealthResponse:
     
     return HealthResponse(
         message="Stable Diffusion 3.5 API is running!",
-        device=status
+        device=status,
+        version="0.3.0"
     )
+
+
+@app.get("/version")
+async def get_version():
+    """Get API version and build information."""
+    import os
+    import datetime
+    
+    return {
+        "version": "0.3.0",
+        "api_title": "SD3 Large LoRA API",
+        "features": [
+            "SD3.5 Large image generation",
+            "LoRA training system", 
+            "Multi-child generation",
+            "Celery background tasks",
+            "Redis job queue"
+        ],
+        "build_date": datetime.datetime.now().isoformat(),
+        "python_path": os.environ.get("PYTHONPATH", ""),
+        "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES", ""),
+        "hf_token_present": bool(os.environ.get("HF_TOKEN")),
+        "container_info": "RunPod PyTorch 2.2.1 CUDA 12.1.1"
+    }
 
 
 @app.get("/generate", response_model=Union[GenerateResponse, ErrorResponse])

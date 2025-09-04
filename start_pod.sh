@@ -77,7 +77,7 @@ cd /app
 celery -A src.sd3_api.tasks.celery_app worker \
     --loglevel=info \
     --concurrency=1 \
-    --queues=training \
+    --queues=training,default \
     --logfile=/workspace/logs/celery.log \
     --detach
 

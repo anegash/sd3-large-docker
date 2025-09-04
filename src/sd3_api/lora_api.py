@@ -2,6 +2,7 @@
 
 import os
 import logging
+import traceback
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta
 
@@ -13,7 +14,7 @@ from .lora_models import (
     ChildCreateRequest, ChildResponse, TrainingImageResponse, BatchUploadResponse,
     TrainingConfigRequest, StartTrainingRequest, LoRAModelResponse,
     TrainingStatusResponse, GenerateWithChildrenRequest, GenerateWithChildrenResponse,
-    ChildStatisticsResponse, SystemStatsResponse
+    ChildStatisticsResponse, SystemStatsResponse, UploadImageResponse
 )
 
 logger = logging.getLogger(__name__)
@@ -189,12 +190,13 @@ async def upload_training_images(
                 # Save using simple storage
                 file_path = simple_storage.save_training_image(child_id, file.filename, image_data)
                 
-                upload_results.append({
-                    "filename": file.filename,
-                    "file_path": file_path,
-                    "description": description,
-                    "size": len(image_data)
-                })
+                upload_results.append(UploadImageResponse(
+                    filename=file.filename,
+                    file_path=str(file_path),
+                    description=description,
+                    metadata={"size": len(image_data), "original_filename": file.filename},
+                    status="uploaded"
+                ))
                 
             except Exception as e:
                 logger.error(f"Failed to upload {file.filename}: {e}")
@@ -282,11 +284,42 @@ async def start_training(child_id: str, request: StartTrainingRequest) -> Dict[s
             config_dict = request.training_config.model_dump()
         
         # Start training using simple storage (handles validation)
-        task_id = simple_storage.start_training(child_id, config_dict)
+        logger.info(f"🎯 Starting training for child {child_id}")
+        logger.info(f"📋 Training config: {config_dict}")
         
-        # Start background training task
-        from .tasks.training_tasks import start_training_task
-        start_training_task(child_id, task_id, config_dict)
+        task_id = simple_storage.start_training(child_id, config_dict)
+        logger.info(f"✅ Simple storage training started with task_id: {task_id}")
+        
+        # Start background training task with Celery
+        # Generate a model_id from the task_id for compatibility
+        model_id = hash(task_id) % 2147483647  # Convert to positive int
+        logger.info(f"🔢 Generated model_id: {model_id} from task_id: {task_id}")
+        
+        try:
+            logger.info(f"📦 Importing Celery training tasks...")
+            from .tasks.training_tasks import start_training_task
+            logger.info(f"✅ Successfully imported start_training_task")
+            
+            logger.info(f"🚀 Dispatching Celery task with params:")
+            logger.info(f"   child_id: {child_id}")
+            logger.info(f"   model_id: {model_id}")
+            logger.info(f"   config_dict: {config_dict}")
+            
+            celery_task_id = start_training_task(child_id, model_id, config_dict)
+            logger.info(f"🎉 SUCCESS! Celery task dispatched with ID: {celery_task_id}")
+            
+        except ImportError as e:
+            logger.error(f"❌ Import error when loading Celery tasks: {e}")
+            logger.error(f"   Full import error: {traceback.format_exc()}")
+            raise HTTPException(status_code=500, detail=f"Failed to import training tasks: {str(e)}")
+            
+        except Exception as e:
+            logger.error(f"💥 CRITICAL: Failed to start Celery task: {e}")
+            logger.error(f"   Error type: {type(e).__name__}")
+            logger.error(f"   Full traceback: {traceback.format_exc()}")
+            
+            # Don't continue silently - this is critical
+            raise HTTPException(status_code=500, detail=f"Failed to start training task: {str(e)}")
         
         return {
             "message": "Training started successfully",
@@ -471,3 +504,66 @@ async def get_system_statistics() -> SystemStatsResponse:
     except Exception as e:
         logger.error(f"Failed to get system statistics: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
+
+
+# Debug Endpoints
+
+@lora_router.post("/debug/test-celery")
+async def test_celery_worker():
+    """Test if Celery worker is functioning."""
+    try:
+        from .tasks.training_tasks import test_celery
+        
+        logger.info("🧪 Starting Celery test task...")
+        task = test_celery.delay()
+        
+        return {
+            "message": "Celery test task started",
+            "task_id": task.id,
+            "status": "pending",
+            "instructions": f"Check task status at /lora/debug/task-status/{task.id}"
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to start Celery test task: {e}")
+        raise HTTPException(status_code=500, detail=f"Celery test failed: {str(e)}")
+
+
+@lora_router.get("/debug/task-status/{task_id}")
+async def get_debug_task_status(task_id: str):
+    """Get status of any Celery task."""
+    try:
+        from .tasks.training_tasks import get_task_status
+        
+        status = get_task_status(task_id)
+        return status
+        
+    except Exception as e:
+        logger.error(f"Failed to get task status for {task_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get task status: {str(e)}")
+
+
+@lora_router.get("/debug/celery-info")
+async def get_celery_info():
+    """Get Celery worker and queue information."""
+    try:
+        from .tasks.celery_app import celery_app
+        
+        # Get active workers
+        inspect = celery_app.control.inspect()
+        active_workers = inspect.active()
+        registered_tasks = inspect.registered()
+        
+        return {
+            "redis_url": celery_app.conf.broker_url,
+            "active_workers": active_workers or {},
+            "registered_tasks": registered_tasks or {},
+            "task_routes": dict(celery_app.conf.task_routes) if celery_app.conf.task_routes else {}
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to get Celery info: {e}")
+        return {
+            "error": str(e),
+            "message": "Failed to inspect Celery workers"
+        }

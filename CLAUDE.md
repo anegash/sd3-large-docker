@@ -248,3 +248,4 @@ All configuration is centralized in `config.py` including model settings, API de
 2. **Background loading**: Model downloads (~8GB) and loads automatically
 3. **Progress monitoring**: Check health endpoint for real-time status
 4. **Ready state**: API accepts generation requests once loading completes
+- https://i2rnjbyutc996h-8000.proxy.runpod.net/ we deployed the app on runpod with A40 GPU

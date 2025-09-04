@@ -3,6 +3,7 @@
 import logging
 import os
 import random
+import traceback
 from pathlib import Path
 from typing import Dict, List, Optional, Callable
 from datetime import datetime
@@ -283,22 +284,54 @@ class LoRATrainer:
         Returns:
             Path to saved LoRA model
         """
+        logger.info(f"🎯 Starting train() method for child_id: {child_id}, model_id: {model_id}")
+        
         try:
             self.is_training = True
             
             # Update status to training
-            db_manager.update_training_status(model_id, TrainingStatus.TRAINING, progress=0.0)
+            logger.info(f"💾 Updating database status to TRAINING...")
+            try:
+                db_manager.update_training_status(model_id, TrainingStatus.TRAINING, progress=0.0)
+                logger.info(f"✅ Database status updated")
+            except Exception as e:
+                logger.error(f"❌ Failed to update database status: {e}")
+                raise RuntimeError(f"Database update failed: {e}")
+            
             self._update_progress(0.0, "Initializing training...")
             
             # Load pipeline if not already loaded
+            logger.info(f"🔧 Loading pipeline...")
             if self.pipeline is None:
-                self.load_pipeline()
+                try:
+                    self.load_pipeline()
+                    logger.info(f"✅ Pipeline loaded successfully")
+                except Exception as e:
+                    logger.error(f"❌ Failed to load pipeline: {e}")
+                    logger.error(f"   Pipeline error: {traceback.format_exc()}")
+                    raise RuntimeError(f"Pipeline loading failed: {e}")
+            else:
+                logger.info(f"✅ Pipeline already loaded")
             
             # Setup LoRA
-            self.setup_lora()
+            logger.info(f"⚙️ Setting up LoRA...")
+            try:
+                self.setup_lora()
+                logger.info(f"✅ LoRA setup completed")
+            except Exception as e:
+                logger.error(f"❌ Failed to setup LoRA: {e}")
+                logger.error(f"   LoRA error: {traceback.format_exc()}")
+                raise RuntimeError(f"LoRA setup failed: {e}")
             
             # Prepare dataset
-            dataloader = self.prepare_dataset(child_id)
+            logger.info(f"📁 Preparing dataset for {child_id}...")
+            try:
+                dataloader = self.prepare_dataset(child_id)
+                logger.info(f"✅ Dataset prepared with {len(dataloader)} batches")
+            except Exception as e:
+                logger.error(f"❌ Failed to prepare dataset: {e}")
+                logger.error(f"   Dataset error: {traceback.format_exc()}")
+                raise RuntimeError(f"Dataset preparation failed: {e}")
             
             # Setup optimizer
             if self.config.use_8bit_adam:
