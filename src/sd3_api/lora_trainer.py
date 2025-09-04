@@ -35,7 +35,7 @@ class LoRATrainer:
             lora_alpha=32,
             target_modules=["to_k", "to_q", "to_v", "to_out.0"],
             lora_dropout=0.1,
-            task_type=TaskType.DIFFUSION,
+            task_type=TaskType.FEATURE_EXTRACTION,
         )
     
     def train_lora(
