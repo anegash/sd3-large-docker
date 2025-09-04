@@ -1,32 +1,70 @@
-# Minimal Dockerfile for RunPod manual development
+# SD3.5 Large LoRA Training System - RunPod Development Container
 FROM runpod/pytorch:2.2.1-py3.10-cuda12.1.1-devel-ubuntu22.04
 
-WORKDIR /app
+# Environment variables for SD3.5 LoRA system
+ENV PYTHONUNBUFFERED=1
+ENV DEBIAN_FRONTEND=noninteractive
+ENV WORKSPACE_DIR=/workspace
+ENV POETRY_CACHE_DIR=/workspace/poetry_cache
+ENV POETRY_VENV_PATH=/workspace/poetry_venvs
+ENV HF_HOME=/workspace/huggingface_cache
+ENV HUGGINGFACE_HUB_CACHE=/workspace/huggingface_cache
 
-# Install basic requirements
-RUN apt update && apt install -y git ffmpeg libsm6 libxext6 redis-server
+# Install system dependencies
+RUN apt update && apt install -y \
+    git \
+    curl \
+    wget \
+    nano \
+    vim \
+    htop \
+    tmux \
+    screen \
+    redis-server \
+    sqlite3 \
+    ffmpeg \
+    libsm6 \
+    libxext6 \
+    openssh-server \
+    && rm -rf /var/lib/apt/lists/*
 
-# Install Python package manager
+# Install and configure Poetry
 RUN pip install --upgrade pip && pip install poetry
+RUN poetry config virtualenvs.path /workspace/poetry_venvs
+RUN poetry config cache-dir /workspace/poetry_cache
 
-# Configure poetry
-RUN poetry config virtualenvs.create false
+# Create directory structure for SD3.5 LoRA system
+RUN mkdir -p \
+    /workspace/sd3-large-docker \
+    /workspace/huggingface_cache \
+    /workspace/poetry_cache \
+    /workspace/poetry_venvs \
+    /workspace/training_data \
+    /workspace/models \
+    /workspace/generated_images \
+    /workspace/logs
 
-# Copy project files for dependencies
-COPY pyproject.toml poetry.lock* /app/
-RUN poetry install --with dev --no-interaction --no-ansi --no-root && pip install runpod
+# Set up SSH for RunPod access
+RUN mkdir -p /var/run/sshd
+RUN echo 'root:runpod' | chpasswd
+RUN sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
+RUN sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config
 
-# Copy the entire project (for git repo)
-COPY . /app
+WORKDIR /workspace/sd3-large-docker
 
-# Create directories
-RUN mkdir -p /app/data /app/logs
+# Copy project files for dependency installation
+COPY pyproject.toml poetry.lock* /workspace/sd3-large-docker/
+RUN poetry install --only main --no-interaction --no-ansi
 
-# Expose ports
-EXPOSE 8000 5555
+# Copy the entire project
+COPY . /workspace/sd3-large-docker/
 
 # Make scripts executable
-RUN chmod +x /app/dummy_start.sh 2>/dev/null || true
+RUN chmod +x /workspace/sd3-large-docker/dummy_start.sh
+RUN chmod +x /workspace/sd3-large-docker/setup_runpod.sh 2>/dev/null || true
 
-# Use dummy startup script
-CMD ["/app/dummy_start.sh"]
+# Expose ports for SD3.5 API and development
+EXPOSE 22 5555 6006 8000 8080 8888
+
+# Use startup script that initializes everything
+CMD ["/workspace/sd3-large-docker/dummy_start.sh"]
