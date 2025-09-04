@@ -38,7 +38,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="SD3 Large LoRA API",
     description="Stable Diffusion 3.5 Large image generation service with LoRA training",
-    version="0.6.0",
+    version="0.7.0-debug-live",
     lifespan=lifespan,
 )
 
@@ -86,7 +86,7 @@ async def health_check() -> HealthResponse:
     return HealthResponse(
         message="Stable Diffusion 3.5 API is running!",
         device=status,
-        version="0.6.0"
+        version="0.7.0-debug-live"
     )
 
 
@@ -97,21 +97,25 @@ async def get_version():
     import datetime
     
     return {
-        "version": "0.6.0",
+        "version": "0.7.0-debug-live",
         "api_title": "SD3 Large LoRA API",
-        "build": "2025-09-04-import-diagnosis",
+        "build": "celery-fix-debug-live",
         "features": [
             "SD3.5 Large image generation",
             "LoRA training system", 
             "Multi-child generation",
             "Celery background tasks",
-            "Redis job queue"
+            "Redis job queue",
+            "Live debug mode",
+            "Instant server restart",
+            "Direct code editing"
         ],
         "changes": [
-            "Added import failure diagnosis for training tasks",
-            "Created test_training_imports task to isolate dependency issues", 
-            "Enhanced debugging to catch pre-execution failures",
-            "Added debug endpoint to test specific training imports"
+            "Fixed Celery serialization issue with train_lora task",
+            "Removed Dict[str, Any] type hints causing PENDING state",
+            "Added live debug mode with keep-alive functionality",
+            "Added instant restart capabilities without container rebuild",
+            "Added comprehensive debug tools and test scripts"
         ],
         "build_date": datetime.datetime.now().isoformat(),
         "python_path": os.environ.get("PYTHONPATH", ""),
