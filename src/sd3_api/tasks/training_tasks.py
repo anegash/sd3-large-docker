@@ -263,7 +263,7 @@ def train_lora(self, child_id, model_id, training_config):
 
 
 @celery_app.task(name="sd3_api.tasks.training_tasks.test_celery")
-def test_celery() -> Dict[str, Any]:
+def test_celery():
     """Simple test task to verify Celery worker is functioning."""
     import time
     from datetime import datetime
@@ -286,7 +286,7 @@ def test_celery() -> Dict[str, Any]:
 
 
 @celery_app.task(bind=True, name="sd3_api.tasks.training_tasks.test_training_imports")
-def test_training_imports(self, child_id: str, model_id: int) -> Dict[str, Any]:
+def test_training_imports(self, child_id, model_id):
     """Test task to isolate import failures without complex dependencies."""
     # CRITICAL: First log to verify function is called
     print(f"🔥 CRITICAL: test_training_imports FUNCTION CALLED! child_id={child_id}")
@@ -356,7 +356,7 @@ def test_training_imports(self, child_id: str, model_id: int) -> Dict[str, Any]:
 
 
 @celery_app.task(name="sd3_api.tasks.training_tasks.cleanup_training_data")
-def cleanup_training_data(child_id: str) -> Dict[str, Any]:
+def cleanup_training_data(child_id):
     """
     Clean up training data for a child.
     
@@ -388,7 +388,7 @@ def cleanup_training_data(child_id: str) -> Dict[str, Any]:
 
 
 @celery_app.task(name="sd3_api.tasks.training_tasks.get_training_status")
-def get_training_status(model_id: int) -> Dict[str, Any]:
+def get_training_status(model_id):
     """
     Get current training status from database or simple storage.
     
@@ -444,7 +444,7 @@ def get_training_status(model_id: int) -> Dict[str, Any]:
         }
 
 
-def start_training_task(child_id: str, model_id: int, training_config: Dict[str, Any]) -> str:
+def start_training_task(child_id, model_id, training_config):
     """
     Start a training task and return task ID.
     
@@ -491,7 +491,7 @@ def start_training_task(child_id: str, model_id: int, training_config: Dict[str,
         raise
 
 
-def get_task_status(task_id: str) -> Dict[str, Any]:
+def get_task_status(task_id):
     """
     Get Celery task status.
     
