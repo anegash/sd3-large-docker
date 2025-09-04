@@ -78,5 +78,30 @@ echo ""
 # Create logs directory if it doesn't exist
 mkdir -p /workspace/logs
 
-# Start the server with logging
-poetry run python main.py 2>&1 | tee /workspace/logs/sd3_server.log
+# Start the server in background with logging
+echo "🔄 Starting server in background..."
+nohup poetry run python main.py > /workspace/logs/sd3_server.log 2>&1 &
+
+# Get the process ID
+SERVER_PID=$!
+echo "   ✅ Server started with PID: $SERVER_PID"
+echo "   📋 Server process ID saved to: /workspace/logs/server.pid"
+echo "$SERVER_PID" > /workspace/logs/server.pid
+
+# Wait a moment and check if server started successfully
+sleep 3
+if kill -0 $SERVER_PID 2>/dev/null; then
+    echo "   ✅ Server is running successfully"
+    echo "   🌐 Server URL: http://localhost:8000"
+    echo "   📚 API Docs: http://localhost:8000/docs"
+    echo "   📜 Logs: tail -f /workspace/logs/sd3_server.log"
+    echo ""
+    echo "🔧 Useful commands:"
+    echo "   • Check status: curl http://localhost:8000/"
+    echo "   • View logs: tail -f /workspace/logs/sd3_server.log"
+    echo "   • Stop server: kill \$(cat /workspace/logs/server.pid)"
+else
+    echo "   ❌ Server failed to start. Check logs:"
+    echo "   tail -f /workspace/logs/sd3_server.log"
+    exit 1
+fi

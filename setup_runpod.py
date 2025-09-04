@@ -102,19 +102,20 @@ def setup_huggingface_auth():
     """Set up HuggingFace authentication."""
     print("\n🤗 Setting up HuggingFace authentication...")
     
-    # Check if token is provided via environment
-    hf_token = os.getenv("HUGGINGFACE_TOKEN")
+    # Check if token is provided via environment (RunPod uses HF_TOKEN)
+    hf_token = os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACE_TOKEN")
     
     if not hf_token:
-        print("   ⚠️  No HUGGINGFACE_TOKEN found in environment")
-        print("   📝 Please set HUGGINGFACE_TOKEN in your RunPod environment variables")
+        print("   ⚠️  No HF_TOKEN or HUGGINGFACE_TOKEN found in environment")
+        print("   📝 Please set HF_TOKEN in your RunPod environment variables")
         print("   🔗 Get your token from: https://huggingface.co/settings/tokens")
         return False
     
-    # Save token to project .env file
+    # Save token to project .env file (use HUGGINGFACE_TOKEN for consistency in app)
     env_path = Path("/workspace/sd3-large-docker/.env")
     with open(env_path, "w") as f:
         f.write(f"HUGGINGFACE_TOKEN={hf_token}\n")
+        f.write(f"HF_TOKEN={hf_token}\n")
         f.write(f"WORKSPACE_DIR=/workspace\n")
         f.write(f"HF_HOME=/workspace/huggingface_cache\n")
     
@@ -135,10 +136,12 @@ export TRANSFORMERS_CACHE=/workspace/huggingface_cache/transformers
 export HF_DATASETS_CACHE=/workspace/huggingface_cache/datasets
 export PATH="/root/.local/bin:$PATH"
 
-# Activate Poetry environment
+# SD3 LoRA Training System aliases
 alias sd3-env="cd /workspace/sd3-large-docker && poetry shell"
-alias sd3-run="cd /workspace/sd3-large-docker && poetry run python main.py"
-alias sd3-status="cd /workspace/sd3-large-docker && poetry run python -c 'from src.sd3_api.pipeline import SD3Pipeline; p=SD3Pipeline(); print(p.status)'"
+alias sd3-start="/workspace/start_sd3.sh"
+alias sd3-stop="/workspace/stop_sd3.sh"
+alias sd3-logs="tail -f /workspace/logs/sd3_server.log"
+alias sd3-status="curl -s http://localhost:8000/ | jq . || curl -s http://localhost:8000/"
 """
     
     with open("/root/.bashrc", "a") as f:
@@ -181,14 +184,23 @@ echo "🔥 Starting FastAPI server..."
 poetry run python main.py
 """
     
-    script_path = Path("/workspace/start_sd3.sh")
-    with open(script_path, "w") as f:
+    start_script_path = Path("/workspace/start_sd3.sh")
+    with open(start_script_path, "w") as f:
         f.write(startup_script)
     
     # Make executable
-    script_path.chmod(0o755)
+    start_script_path.chmod(0o755)
     
-    print(f"   ✅ Startup script created: {script_path}")
+    # Copy stop script to workspace
+    import shutil
+    stop_script_src = Path("/workspace/sd3-large-docker/stop_runpod.sh")
+    stop_script_dst = Path("/workspace/stop_sd3.sh")
+    if stop_script_src.exists():
+        shutil.copy2(stop_script_src, stop_script_dst)
+        stop_script_dst.chmod(0o755)
+        print(f"   ✅ Stop script created: {stop_script_dst}")
+    
+    print(f"   ✅ Startup script created: {start_script_path}")
 
 
 def test_installation():
@@ -247,14 +259,16 @@ def main():
             print("\n📖 Next steps:")
             print("   1. Restart your terminal or run: source ~/.bashrc")
             print("   2. Start the server: /workspace/start_sd3.sh")
-            print("   3. Or use alias: sd3-run")
+            print("   3. Server will run in background")
             print("   4. API will be available at: http://localhost:8000")
             print("   5. Documentation: http://localhost:8000/docs")
             
-            print("\n🔧 Useful commands:")
+            print("\n🔧 Useful aliases (available after restart):")
+            print("   • sd3-start    : Start the server in background")
+            print("   • sd3-stop     : Stop the server")
+            print("   • sd3-status   : Check server health")
+            print("   • sd3-logs     : View server logs")
             print("   • sd3-env      : Activate Poetry environment")
-            print("   • sd3-run      : Start the server") 
-            print("   • sd3-status   : Check model status")
             
         else:
             print("\n⚠️  Setup completed with warnings. Check the logs above.")
