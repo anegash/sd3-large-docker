@@ -150,11 +150,21 @@ cat > start_app.sh << 'EOF'
 
 cd /workspace/sd3-large-docker
 
-# Ensure environment variables are loaded
-source ~/.bashrc
+# Load environment variables from multiple sources
+export PATH="/root/.local/bin:$PATH"
+export POETRY_CACHE_DIR=/workspace/poetry_cache
+export POETRY_VENV_PATH=/workspace/poetry_venvs
+export HF_HOME=/workspace/huggingface_cache
+export HUGGINGFACE_HUB_CACHE=/workspace/huggingface_cache
+
+# Load HuggingFace token if available
+if [ -f .env ]; then
+    export $(cat .env | xargs)
+fi
 
 echo "🚀 Starting SD3.5 Large LoRA Training System..."
 echo "📍 Working directory: $(pwd)"
+echo "🔧 Poetry path: $(which poetry)"
 
 # Start the server
 poetry run python main.py
@@ -168,11 +178,21 @@ cat > start_worker.sh << 'EOF'
 
 cd /workspace/sd3-large-docker
 
-# Ensure environment variables are loaded
-source ~/.bashrc
+# Load environment variables from multiple sources
+export PATH="/root/.local/bin:$PATH"
+export POETRY_CACHE_DIR=/workspace/poetry_cache
+export POETRY_VENV_PATH=/workspace/poetry_venvs
+export HF_HOME=/workspace/huggingface_cache
+export HUGGINGFACE_HUB_CACHE=/workspace/huggingface_cache
+
+# Load HuggingFace token if available
+if [ -f .env ]; then
+    export $(cat .env | xargs)
+fi
 
 echo "🔄 Starting Celery worker for LoRA training..."
 echo "📍 Working directory: $(pwd)"
+echo "🔧 Poetry path: $(which poetry)"
 
 # Start the Celery worker
 poetry run celery -A src.sd3_api.tasks.celery_app worker --loglevel=info -Q training
