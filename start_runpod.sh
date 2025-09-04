@@ -16,6 +16,13 @@ export TRANSFORMERS_CACHE=/workspace/huggingface_cache/transformers
 export HF_DATASETS_CACHE=/workspace/huggingface_cache/datasets
 export PATH="/root/.local/bin:$PATH"
 
+# Check if Poetry is available, install if missing
+if ! command -v poetry &> /dev/null; then
+    echo "🔧 Poetry not found, installing..."
+    curl -sSL https://install.python-poetry.org | python3 -
+    export PATH="/root/.local/bin:$PATH"
+fi
+
 # Change to project directory  
 cd /workspace/sd3-large-docker
 
