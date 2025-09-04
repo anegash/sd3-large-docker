@@ -1,0 +1,32 @@
+# Minimal Dockerfile for RunPod manual development
+FROM runpod/pytorch:2.2.1-py3.10-cuda12.1.1-devel-ubuntu22.04
+
+WORKDIR /app
+
+# Install basic requirements
+RUN apt update && apt install -y git ffmpeg libsm6 libxext6 redis-server
+
+# Install Python package manager
+RUN pip install --upgrade pip && pip install poetry
+
+# Configure poetry
+RUN poetry config virtualenvs.create false
+
+# Copy project files for dependencies
+COPY pyproject.toml poetry.lock* /app/
+RUN poetry install --with dev --no-interaction --no-ansi --no-root && pip install runpod
+
+# Copy the entire project (for git repo)
+COPY . /app
+
+# Create directories
+RUN mkdir -p /app/data /app/logs
+
+# Expose ports
+EXPOSE 8000 5555
+
+# Make scripts executable
+RUN chmod +x /app/dummy_start.sh 2>/dev/null || true
+
+# Use dummy startup script
+CMD ["/app/dummy_start.sh"]
