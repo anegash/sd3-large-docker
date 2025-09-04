@@ -173,14 +173,14 @@ class SD3Pipeline:
                 
                 # Load the actual LoRA weights
                 from peft import PeftModel
-                self.pipeline.text_encoder = PeftModel.from_pretrained(
-                    self.pipeline.text_encoder,
+                self.pipeline.transformer = PeftModel.from_pretrained(
+                    self.pipeline.transformer,
                     str(lora_dir),
                     adapter_name=person_id
                 )
                 
                 # Set active adapter
-                self.pipeline.text_encoder.set_adapter(person_id)
+                self.pipeline.transformer.set_adapter(person_id)
                 self.current_lora_id = person_id
                 
                 logger.info(f"Successfully loaded trained LoRA weights for {person_id}")
