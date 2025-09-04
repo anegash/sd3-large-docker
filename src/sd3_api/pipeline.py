@@ -8,9 +8,11 @@ import torch
 from diffusers import StableDiffusion3Pipeline
 from PIL import Image
 from huggingface_hub import login
+from peft import PeftModel
 
 from .config import MODEL_ID, MODEL_VARIANT
 from .device import DeviceType, detect_device, get_torch_dtype_for_device
+from .lora_trainer import LoRATrainer
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +26,12 @@ class SD3Pipeline:
         self.device_description: str = ""
         self.is_loading: bool = False
         self.load_error: Optional[str] = None
+        self.lora_trainer = LoRATrainer()
+        self.current_lora_id: Optional[str] = None
+        
+        # Import config to ensure workspace directories are created
+        from .config import ensure_workspace_dirs
+        ensure_workspace_dirs()
         
         if eager_load:
             self._initialize_pipeline()
@@ -86,7 +94,8 @@ class SD3Pipeline:
         self, 
         prompt: str, 
         num_inference_steps: int = 15, 
-        guidance_scale: float = 7.5
+        guidance_scale: float = 7.5,
+        person_id: Optional[str] = None
     ) -> Image.Image:
         """
         Generate an image from a text prompt.
@@ -95,6 +104,7 @@ class SD3Pipeline:
             prompt: Text prompt for image generation
             num_inference_steps: Number of denoising steps
             guidance_scale: Guidance scale for generation
+            person_id: Optional person ID to load LoRA weights for
             
         Returns:
             Generated PIL Image
@@ -102,8 +112,14 @@ class SD3Pipeline:
         if self.pipeline is None:
             raise RuntimeError("Pipeline not initialized")
         
+        # Load LoRA weights if person_id provided
+        if person_id and person_id != self.current_lora_id:
+            self.load_lora_weights(person_id)
+        
         logger.info(f"Generating image with prompt: '{prompt[:50]}...' "
                    f"(steps={num_inference_steps}, guidance={guidance_scale})")
+        if person_id:
+            logger.info(f"Using LoRA weights for person_id: {person_id}")
         
         try:
             result = self.pipeline(
@@ -133,3 +149,46 @@ class SD3Pipeline:
             return f"Ready on {self.device_description}"
         else:
             return "Not initialized"
+    
+    def load_lora_weights(self, person_id: str) -> None:
+        """Load LoRA weights for a specific person."""
+        if self.pipeline is None:
+            raise RuntimeError("Pipeline not initialized")
+        
+        lora_path = self.lora_trainer.get_lora_path(person_id)
+        if lora_path is None:
+            raise ValueError(f"No LoRA weights found for person_id: {person_id}")
+        
+        try:
+            logger.info(f"Loading LoRA weights for {person_id}")
+            
+            # Load LoRA adapter to text encoder
+            self.pipeline.text_encoder = PeftModel.from_pretrained(
+                self.pipeline.text_encoder,
+                str(lora_path),
+                adapter_name=person_id
+            )
+            
+            # Set the active adapter
+            self.pipeline.text_encoder.set_adapter(person_id)
+            self.current_lora_id = person_id
+            
+            logger.info(f"Successfully loaded LoRA weights for {person_id}")
+            
+        except Exception as e:
+            logger.error(f"Failed to load LoRA weights for {person_id}: {e}")
+            raise
+    
+    def unload_lora_weights(self) -> None:
+        """Unload current LoRA weights."""
+        if self.current_lora_id and self.pipeline:
+            try:
+                logger.info(f"Unloading LoRA weights for {self.current_lora_id}")
+                # This would disable the adapter - implementation depends on peft version
+                self.current_lora_id = None
+            except Exception as e:
+                logger.warning(f"Failed to cleanly unload LoRA weights: {e}")
+    
+    def get_available_loras(self) -> list:
+        """Get list of available LoRA person IDs."""
+        return self.lora_trainer.list_available_loras()

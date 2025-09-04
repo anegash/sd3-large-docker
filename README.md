@@ -36,7 +36,60 @@ The setup script will guide you through this process.
 
 ## RunPod Deployment
 
-### Quick Deploy to RunPod Hub
+### RunPod Pod Deployment (Persistent Storage)
+
+For persistent LoRA training with storage that survives pod restarts:
+
+#### Initial Setup (One-time)
+
+1. **Create RunPod Pod**: Launch a pod with persistent storage (recommended: 50GB+ network volume)
+2. **Clone Repository**: 
+   ```bash
+   git clone https://github.com/yourusername/sd3-large-docker.git
+   cd sd3-large-docker
+   ```
+
+3. **Run Setup Script**: 
+   ```bash
+   python3 setup_runpod.py
+   ```
+   This will:
+   - Install Poetry and dependencies in `/workspace/venv` 
+   - Set up persistent directories in `/workspace`
+   - Configure HuggingFace cache in `/workspace/huggingface_cache`
+   - Create startup scripts and environment variables
+
+4. **Set HuggingFace Token**: 
+   - Either set `HUGGINGFACE_TOKEN` in RunPod environment variables, or
+   - Run the setup script and enter your token when prompted
+
+#### Starting the Service
+
+After initial setup, start the server:
+```bash
+/workspace/start_sd3.sh
+# OR use the alias:
+sd3-run
+```
+
+The server will be available at `http://localhost:8000` with:
+- **API Documentation**: `http://localhost:8000/docs`
+- **Health Check**: `http://localhost:8000/`
+- **LoRA Training**: `POST /train-lora`
+- **Image Generation**: `POST /generate` with `person_id` parameter
+
+#### Persistent Storage Structure
+```
+/workspace/
+├── sd3-project/          # Project files
+├── venv/                 # Poetry virtual environment  
+├── huggingface_cache/    # Model cache (8GB+ SD3.5 Large)
+├── lora_weights/         # Trained LoRA weights
+├── logs/                 # Server logs
+└── start_sd3.sh         # Startup script
+```
+
+### Quick Deploy to RunPod Hub (Serverless)
 
 1. **Fork/Clone Repository**: Get your own copy of this repository
 2. **Configure Secrets**: Set `HUGGINGFACE_TOKEN` in RunPod environment  
@@ -196,19 +249,79 @@ curl -X POST "http://localhost:8000/generate" \
   }'
 ```
 
+### LoRA Training and Personalized Generation
+
+#### Train LoRA Model
+
+Train a personalized LoRA model using 5-20 images of a person:
+
+```bash
+curl -X POST "http://localhost:8000/train-lora" \
+  -F "person_id=john_doe" \
+  -F "num_train_epochs=100" \
+  -F "learning_rate=0.0001" \
+  -F "files=@photo1.jpg" \
+  -F "files=@photo2.jpg" \
+  -F "files=@photo3.jpg" \
+  -F "files=@photo4.jpg" \
+  -F "files=@photo5.jpg"
+```
+
+#### Generate with LoRA Weights
+
+Once trained, generate images using the person's LoRA weights:
+
+```bash
+# GET method
+curl "http://localhost:8000/generate?prompt=a%20photo%20of%20john_doe%20in%20a%20suit&person_id=john_doe"
+
+# POST method
+curl -X POST "http://localhost:8000/generate" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt": "portrait of john_doe smiling in a garden",
+    "person_id": "john_doe",
+    "steps": 20,
+    "guidance": 7.5
+  }'
+```
+
+#### List Available LoRA Models
+
+```bash
+curl "http://localhost:8000/lora"
+```
+
+#### Delete LoRA Model
+
+```bash
+curl -X DELETE "http://localhost:8000/lora/john_doe"
+```
+
 ## API Endpoints
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/` | GET | Health check and device info |
 | `/generate` | GET/POST | Generate image from text prompt |
+| `/train-lora` | POST | Train LoRA model with uploaded images |
+| `/lora` | GET | List available LoRA person IDs |
+| `/lora/{person_id}` | DELETE | Delete LoRA weights for person |
 | `/docs` | GET | Interactive API documentation |
 
-### Parameters
+### Generation Parameters
 
 - **prompt** (required): Text description of the image to generate
 - **steps** (optional): Number of inference steps (1-150, default: 15)
 - **guidance** (optional): Guidance scale (1.0-15.0, default: 7.5)
+- **person_id** (optional): Person ID to load LoRA weights for
+
+### LoRA Training Parameters
+
+- **person_id** (required): Unique identifier for the person
+- **files** (required): 5-20 image files for training
+- **num_train_epochs** (optional): Training epochs (10-500, default: 100)
+- **learning_rate** (optional): Learning rate (default: 0.0001)
 
 ### Response
 
