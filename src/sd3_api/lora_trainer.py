@@ -35,7 +35,7 @@ class LoRATrainer:
             lora_alpha=32,
             target_modules=["to_q", "to_k", "to_v", "to_out.0"],  # SD3 transformer attention modules
             lora_dropout=0.1,
-            task_type=TaskType.DIFFUSION,
+            task_type=TaskType.FEATURE_EXTRACTION,  # Use FEATURE_EXTRACTION for diffusion models
         )
     
     def train_lora_from_images(
