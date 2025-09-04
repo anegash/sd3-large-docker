@@ -162,11 +162,11 @@ class LoRATrainer:
                     input_ids = text_inputs.input_ids.to(device)
                     
                     # Forward pass through LoRA model
-                    text_embeddings = lora_model(input_ids)
+                    text_embeddings = lora_model(input_ids=input_ids)
                     
                     # Get original embeddings for comparison
                     with torch.no_grad():
-                        original_embeddings = text_encoder(input_ids)
+                        original_embeddings = text_encoder(input_ids=input_ids)
                     
                     # Calculate loss (encourage learning person-specific features)
                     # Use a combination of reconstruction loss and regularization
