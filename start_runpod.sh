@@ -16,8 +16,8 @@ export TRANSFORMERS_CACHE=/workspace/huggingface_cache/transformers
 export HF_DATASETS_CACHE=/workspace/huggingface_cache/datasets
 export PATH="/root/.local/bin:$PATH"
 
-# Change to project directory
-cd /workspace/sd3-project
+# Change to project directory  
+cd /workspace/sd3-large-docker
 
 echo "📋 Environment Status:"
 echo "   Workspace: $WORKSPACE_DIR"

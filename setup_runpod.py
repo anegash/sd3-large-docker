@@ -43,13 +43,21 @@ def setup_workspace():
         "/workspace/models", 
         "/workspace/huggingface_cache",
         "/workspace/logs",
-        "/workspace/venv",
-        "/workspace/sd3-project"
+        "/workspace/venv"
     ]
     
     for dir_path in workspace_dirs:
         Path(dir_path).mkdir(parents=True, exist_ok=True)
         print(f"   ✅ Created: {dir_path}")
+    
+    # Verify we're in the right project directory
+    if not Path("/workspace/sd3-large-docker/pyproject.toml").exists():
+        print("   ❌ Project not found at /workspace/sd3-large-docker")
+        print("   📂 Please ensure you've cloned the repo to /workspace/sd3-large-docker")
+        return False
+    else:
+        print("   ✅ Project found at /workspace/sd3-large-docker")
+        return True
 
 
 def install_system_dependencies():
@@ -73,13 +81,9 @@ def setup_python_environment():
     """Set up Python environment with Poetry."""
     print("\n🐍 Setting up Python environment...")
     
-    # Copy project to workspace if not already there
-    if not Path("/workspace/sd3-project/pyproject.toml").exists():
-        print("   📂 Copying project to workspace...")
-        run_command("cp -r /app/* /workspace/sd3-project/", "Copying project files")
-    
-    # Change to project directory
-    os.chdir("/workspace/sd3-project")
+    # Change to project directory (already exists at /workspace/sd3-large-docker)
+    os.chdir("/workspace/sd3-large-docker")
+    print(f"   📂 Working in: {os.getcwd()}")
     
     # Configure Poetry to use workspace venv
     commands = [
@@ -107,8 +111,8 @@ def setup_huggingface_auth():
         print("   🔗 Get your token from: https://huggingface.co/settings/tokens")
         return False
     
-    # Save token to workspace .env file
-    env_path = Path("/workspace/sd3-project/.env")
+    # Save token to project .env file
+    env_path = Path("/workspace/sd3-large-docker/.env")
     with open(env_path, "w") as f:
         f.write(f"HUGGINGFACE_TOKEN={hf_token}\n")
         f.write(f"WORKSPACE_DIR=/workspace\n")
@@ -132,9 +136,9 @@ export HF_DATASETS_CACHE=/workspace/huggingface_cache/datasets
 export PATH="/root/.local/bin:$PATH"
 
 # Activate Poetry environment
-alias sd3-env="cd /workspace/sd3-project && poetry shell"
-alias sd3-run="cd /workspace/sd3-project && poetry run python main.py"
-alias sd3-status="cd /workspace/sd3-project && poetry run python -c 'from src.sd3_api.pipeline import SD3Pipeline; p=SD3Pipeline(); print(p.status)'"
+alias sd3-env="cd /workspace/sd3-large-docker && poetry shell"
+alias sd3-run="cd /workspace/sd3-large-docker && poetry run python main.py"
+alias sd3-status="cd /workspace/sd3-large-docker && poetry run python -c 'from src.sd3_api.pipeline import SD3Pipeline; p=SD3Pipeline(); print(p.status)'"
 """
     
     with open("/root/.bashrc", "a") as f:
@@ -160,7 +164,7 @@ export HF_DATASETS_CACHE=/workspace/huggingface_cache/datasets
 export PATH="/root/.local/bin:$PATH"
 
 # Change to project directory
-cd /workspace/sd3-project
+cd /workspace/sd3-large-docker
 
 # Load environment variables from .env
 if [ -f .env ]; then
@@ -191,7 +195,7 @@ def test_installation():
     """Test the installation."""
     print("\n🧪 Testing installation...")
     
-    os.chdir("/workspace/sd3-project")
+    os.chdir("/workspace/sd3-large-docker")
     
     # Test Poetry environment
     result = run_command("poetry run python -c 'import torch; import diffusers; import peft; print(\"✅ All packages imported successfully\")'", 
@@ -225,7 +229,8 @@ def main():
     
     try:
         # Run setup steps
-        setup_workspace()
+        if not setup_workspace():
+            sys.exit(1)
         install_system_dependencies()
         setup_python_environment()
         
