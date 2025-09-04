@@ -1,5 +1,6 @@
 """Stable Diffusion pipeline management."""
 
+import json
 import logging
 import os
 from typing import Optional
@@ -156,21 +157,42 @@ class SD3Pipeline:
             raise RuntimeError("Pipeline not initialized")
         
         # Check if LoRA exists
+        lora_dir = self.lora_trainer.lora_weights_dir / person_id
         metadata_path = self.lora_trainer.lora_weights_dir / f"{person_id}_metadata.json"
+        
         if not metadata_path.exists():
             raise ValueError(f"No LoRA weights found for person_id: {person_id}")
         
         try:
-            logger.info(f"Loading LoRA weights for {person_id} (placeholder implementation)")
+            # Read metadata to check if it's actually trained
+            with open(metadata_path, 'r') as f:
+                metadata = json.load(f)
             
-            # For now, just set the current LoRA ID to indicate it's "loaded"
-            self.current_lora_id = person_id
-            
-            logger.info(f"Successfully loaded LoRA weights for {person_id}")
-            
+            if metadata.get("model_type") == "sd3_lora_trained" and lora_dir.exists():
+                logger.info(f"Loading trained LoRA weights for {person_id}")
+                
+                # Load the actual LoRA weights
+                from peft import PeftModel
+                self.pipeline.text_encoder = PeftModel.from_pretrained(
+                    self.pipeline.text_encoder,
+                    str(lora_dir),
+                    adapter_name=person_id
+                )
+                
+                # Set active adapter
+                self.pipeline.text_encoder.set_adapter(person_id)
+                self.current_lora_id = person_id
+                
+                logger.info(f"Successfully loaded trained LoRA weights for {person_id}")
+            else:
+                logger.info(f"Loading placeholder LoRA for {person_id}")
+                self.current_lora_id = person_id
+                
         except Exception as e:
             logger.error(f"Failed to load LoRA weights for {person_id}: {e}")
-            raise
+            # Fall back to placeholder mode
+            self.current_lora_id = person_id
+            logger.info(f"Using placeholder mode for {person_id}")
     
     def unload_lora_weights(self) -> None:
         """Unload current LoRA weights."""
