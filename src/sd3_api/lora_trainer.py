@@ -29,11 +29,11 @@ class LoRATrainer:
         self.lora_weights_dir = Path(lora_weights_dir)
         ensure_workspace_dirs()  # Ensure all workspace dirs exist
         
-        # LoRA configuration
+        # LoRA configuration for SD3.5 text encoder
         self.lora_config = LoraConfig(
             r=16,
             lora_alpha=32,
-            target_modules=["to_k", "to_q", "to_v", "to_out.0"],
+            target_modules=["q_proj", "k_proj", "v_proj", "out_proj"],
             lora_dropout=0.1,
             task_type=TaskType.FEATURE_EXTRACTION,
         )
