@@ -52,19 +52,11 @@ class SD3Pipeline:
             torch_dtype = get_torch_dtype_for_device(self.device)
             
             # Load pipeline
-            if self.device == "cpu":
-                # CPU doesn't support fp16 variant
-                self.pipeline = StableDiffusion3Pipeline.from_pretrained(
-                    MODEL_ID, 
-                    torch_dtype=torch_dtype
-                )
-            else:
-                # GPU devices can use fp16 variant
-                self.pipeline = StableDiffusion3Pipeline.from_pretrained(
-                    MODEL_ID, 
-                    torch_dtype=torch_dtype, 
-                    variant=MODEL_VARIANT
-                )
+            # SD3.5 Large doesn't support variant parameter properly, load without it
+            self.pipeline = StableDiffusion3Pipeline.from_pretrained(
+                MODEL_ID, 
+                torch_dtype=torch_dtype
+            )
             
             # Move to device
             self.pipeline.to(self.device)
