@@ -47,6 +47,9 @@ class ExistingChildLoRATest:
             
             if image_count < 3:
                 logger.error(f"❌ Need at least 3 images, found {image_count}")
+                logger.info(f"💡 Images should be in: /workspace/sd3-large-docker/data/training_images/{self.child_id}/")
+                logger.info(f"💡 Run: mkdir -p /workspace/sd3-large-docker/data/training_images/{self.child_id}")
+                logger.info(f"💡 Run: mv /workspace/sd3-large-docker/data/children/{self.child_id}/training_images/* /workspace/sd3-large-docker/data/training_images/{self.child_id}/")
                 return False
             
             return True
