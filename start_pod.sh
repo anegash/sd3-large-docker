@@ -124,11 +124,14 @@ python -m uvicorn src.sd3_api.api:app \
     --log-level debug \
     --access-log 2>&1 | tee /workspace/logs/uvicorn.log
 
-# If uvicorn fails, show the error and keep container alive for debugging
+# If uvicorn fails, show the error and start debug mode
 if [ $? -ne 0 ]; then
     echo "❌ Uvicorn failed to start. Error details above."
     echo "📝 Last 50 lines of log:"
     tail -50 /workspace/logs/uvicorn.log 2>/dev/null || echo "No log file found"
-    echo "🔄 Keeping container alive for debugging..."
-    sleep 3600
+    echo "🔄 Starting debug mode..."
+    /app/debug_mode.sh
+else
+    echo "🔄 Server stopped unexpectedly. Starting debug mode..."
+    /app/debug_mode.sh
 fi
