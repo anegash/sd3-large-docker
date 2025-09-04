@@ -78,15 +78,30 @@ fi
 
 # Set up HuggingFace authentication
 echo "🔐 Setting up HuggingFace authentication..."
-echo "Next step: Run 'poetry run python setup_huggingface.py' to authenticate with HuggingFace"
+if [ -n "$HF_TOKEN" ]; then
+    echo "✅ Found HF_TOKEN environment variable"
+    export HUGGINGFACE_TOKEN=$HF_TOKEN
+    echo "HUGGINGFACE_TOKEN=$HF_TOKEN" > .env
+    echo 'export HUGGINGFACE_TOKEN=$HF_TOKEN' >> ~/.bashrc
+    echo "✅ HuggingFace authentication configured automatically"
+else
+    echo "⚠️ HF_TOKEN not found - you'll need to run setup_huggingface.py manually"
+    echo "Next step: Run 'poetry run python setup_huggingface.py' to authenticate with HuggingFace"
+fi
 
 echo ""
 echo "🎉 RunPod setup completed successfully!"
 echo ""
-echo "Next steps:"
-echo "1. Run: poetry run python setup_huggingface.py"
-echo "2. Start server: poetry run python main.py"
-echo "3. Start Celery worker: poetry run celery -A src.sd3_api.tasks.celery_app worker --loglevel=info -Q training"
+if [ -n "$HF_TOKEN" ]; then
+    echo "Ready to start! Next steps:"
+    echo "1. Start server: poetry run python main.py"
+    echo "2. Start Celery worker: poetry run celery -A src.sd3_api.tasks.celery_app worker --loglevel=info -Q training"
+else
+    echo "Next steps:"
+    echo "1. Run: poetry run python setup_huggingface.py"
+    echo "2. Start server: poetry run python main.py"
+    echo "3. Start Celery worker: poetry run celery -A src.sd3_api.tasks.celery_app worker --loglevel=info -Q training"
+fi
 echo ""
 echo "Environment variables set:"
 echo "- POETRY_CACHE_DIR: /workspace/poetry_cache"
