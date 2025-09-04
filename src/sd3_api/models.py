@@ -32,12 +32,19 @@ class HealthResponse(BaseModel):
     device: str = Field(..., description="Device being used for inference")
 
 
+class UploadImagesRequest(BaseModel):
+    """Request model for uploading training images."""
+    
+    person_id: str = Field(..., description="Unique identifier for the person")
+
+
 class TrainLoRARequest(BaseModel):
     """Request model for LoRA training."""
     
     person_id: str = Field(..., description="Unique identifier for the person")
     num_train_epochs: int = Field(100, ge=10, le=500, description="Number of training epochs")
     learning_rate: float = Field(1e-4, gt=0, le=1e-2, description="Learning rate for training")
+    source_person_id: Optional[str] = Field(None, description="Copy images from existing person_id")
 
 
 class TrainLoRAResponse(BaseModel):
@@ -47,7 +54,30 @@ class TrainLoRAResponse(BaseModel):
     person_id: str = Field(..., description="Person ID being trained")
 
 
+class UploadImagesResponse(BaseModel):
+    """Response model for image upload."""
+    
+    message: str = Field(..., description="Upload status message")
+    person_id: str = Field(..., description="Person ID for uploaded images")
+    num_images: int = Field(..., description="Number of images uploaded")
+    total_images: int = Field(..., description="Total images for this person")
+
+
+class ImagesStatusResponse(BaseModel):
+    """Response model for image status."""
+    
+    person_id: str = Field(..., description="Person ID")
+    num_images: int = Field(..., description="Number of images available")
+    images_ready: bool = Field(..., description="Whether images are ready for training")
+
+
 class LoRAListResponse(BaseModel):
     """Response model for listing available LoRA models."""
     
     person_ids: List[str] = Field(..., description="List of available person IDs")
+
+
+class ImagesListResponse(BaseModel):
+    """Response model for listing available image sets."""
+    
+    image_sets: List[ImagesStatusResponse] = Field(..., description="Available image sets")

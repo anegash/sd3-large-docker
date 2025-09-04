@@ -13,7 +13,8 @@ from PIL import Image
 
 from .models import (
     GenerateRequest, GenerateResponse, ErrorResponse, HealthResponse,
-    TrainLoRARequest, TrainLoRAResponse, LoRAListResponse
+    TrainLoRARequest, TrainLoRAResponse, LoRAListResponse,
+    UploadImagesRequest, UploadImagesResponse, ImagesStatusResponse, ImagesListResponse
 )
 from .pipeline import SD3Pipeline
 
@@ -140,27 +141,16 @@ async def generate_image_post(
     )
 
 
-@app.post("/train-lora", response_model=Union[TrainLoRAResponse, ErrorResponse])
-async def train_lora(
+@app.post("/upload-images", response_model=Union[UploadImagesResponse, ErrorResponse])
+async def upload_images(
     person_id: str = Form(..., description="Unique identifier for the person"),
-    num_train_epochs: int = Form(100, description="Number of training epochs"),
-    learning_rate: float = Form(1e-4, description="Learning rate for training"),
-    files: List[UploadFile] = File(..., description="Training images (5-20 images)")
-) -> Union[TrainLoRAResponse, ErrorResponse]:
-    """Train LoRA weights for a specific person using uploaded images."""
+    files: List[UploadFile] = File(..., description="Training images to upload")
+) -> Union[UploadImagesResponse, ErrorResponse]:
+    """Upload training images for a specific person."""
     
     try:
-        # Validate number of images
-        if len(files) < 5 or len(files) > 20:
-            raise HTTPException(
-                status_code=400, 
-                detail="Please upload between 5 and 20 images for training"
-            )
-        
-        pip = get_pipeline()
-        
-        if not pip.is_ready:
-            raise HTTPException(status_code=503, detail="Model not ready")
+        if len(files) == 0:
+            raise HTTPException(status_code=400, detail="No images provided")
         
         # Load and validate images
         images = []
@@ -176,16 +166,89 @@ async def train_lora(
             image = Image.open(io.BytesIO(image_data)).convert("RGB")
             images.append(image)
         
-        logger.info(f"Starting LoRA training for {person_id} with {len(images)} images")
+        logger.info(f"Uploading {len(images)} images for {person_id}")
         
-        # Train LoRA (this is synchronous and may take a while)
-        pip.lora_trainer.train_lora(
+        # Use image manager to save images
+        from .image_manager import ImageManager
+        image_manager = ImageManager()
+        
+        result = image_manager.upload_images(person_id, images)
+        
+        return UploadImagesResponse(
+            message=f"Successfully uploaded {result['num_images']} images for {person_id}",
             person_id=person_id,
-            images=images,
-            pipeline=pip.pipeline,
-            num_train_epochs=num_train_epochs,
-            learning_rate=learning_rate
+            num_images=result['num_images'],
+            total_images=result['total_images']
         )
+        
+    except Exception as e:
+        logger.error(f"Image upload failed: {e}")
+        return JSONResponse(
+            status_code=500,
+            content=ErrorResponse(error=str(e)).model_dump()
+        )
+
+
+@app.post("/train-lora", response_model=Union[TrainLoRAResponse, ErrorResponse])
+async def train_lora(
+    person_id: str = Form(..., description="Unique identifier for the person"),
+    num_train_epochs: int = Form(100, description="Number of training epochs"),
+    learning_rate: float = Form(1e-4, description="Learning rate for training"),
+    source_person_id: Optional[str] = Form(None, description="Copy images from existing person_id"),
+    files: Optional[List[UploadFile]] = File(None, description="Training images (optional if using stored images)")
+) -> Union[TrainLoRAResponse, ErrorResponse]:
+    """Train LoRA weights for a specific person."""
+    
+    try:
+        pip = get_pipeline()
+        
+        if not pip.is_ready:
+            raise HTTPException(status_code=503, detail="Model not ready")
+        
+        # If files are provided, use legacy direct training
+        if files and len(files) > 0:
+            # Validate number of images
+            if len(files) < 5:
+                raise HTTPException(
+                    status_code=400, 
+                    detail="Please upload at least 5 images for training"
+                )
+            
+            # Load and validate images
+            images = []
+            for file in files:
+                if not file.content_type.startswith("image/"):
+                    raise HTTPException(
+                        status_code=400, 
+                        detail=f"File {file.filename} is not a valid image"
+                    )
+                
+                # Read and convert to PIL Image
+                image_data = await file.read()
+                image = Image.open(io.BytesIO(image_data)).convert("RGB")
+                images.append(image)
+            
+            logger.info(f"Starting LoRA training for {person_id} with {len(images)} uploaded images")
+            
+            # Train LoRA with uploaded images
+            pip.lora_trainer.train_lora(
+                person_id=person_id,
+                images=images,
+                pipeline=pip.pipeline,
+                num_train_epochs=num_train_epochs,
+                learning_rate=learning_rate
+            )
+        else:
+            # Use stored images for training
+            logger.info(f"Starting LoRA training for {person_id} using stored images")
+            
+            pip.lora_trainer.train_lora_from_images(
+                person_id=person_id,
+                pipeline=pip.pipeline,
+                num_train_epochs=num_train_epochs,
+                learning_rate=learning_rate,
+                source_person_id=source_person_id
+            )
         
         return TrainLoRAResponse(
             message=f"LoRA training completed successfully for {person_id}",
@@ -212,6 +275,61 @@ async def list_lora_models() -> LoRAListResponse:
         
     except Exception as e:
         logger.error(f"Failed to list LoRA models: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/images", response_model=ImagesListResponse)
+async def list_image_sets() -> ImagesListResponse:
+    """List all available image sets."""
+    
+    try:
+        from .image_manager import ImageManager
+        image_manager = ImageManager()
+        
+        image_sets_data = image_manager.list_available_image_sets()
+        image_sets = [ImagesStatusResponse(**data) for data in image_sets_data]
+        
+        return ImagesListResponse(image_sets=image_sets)
+        
+    except Exception as e:
+        logger.error(f"Failed to list image sets: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/images/{person_id}", response_model=ImagesStatusResponse)
+async def get_images_status(person_id: str) -> ImagesStatusResponse:
+    """Get image status for a specific person."""
+    
+    try:
+        from .image_manager import ImageManager
+        image_manager = ImageManager()
+        
+        status_data = image_manager.get_images_status(person_id)
+        
+        return ImagesStatusResponse(**status_data)
+        
+    except Exception as e:
+        logger.error(f"Failed to get images status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/images/{person_id}")
+async def delete_images(person_id: str):
+    """Delete all images for a specific person."""
+    
+    try:
+        from .image_manager import ImageManager
+        image_manager = ImageManager()
+        
+        success = image_manager.delete_images(person_id)
+        
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to delete images")
+        
+        return {"message": f"Successfully deleted images for {person_id}"}
+        
+    except Exception as e:
+        logger.error(f"Failed to delete images: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

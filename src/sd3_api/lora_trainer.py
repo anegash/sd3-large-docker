@@ -38,6 +38,46 @@ class LoRATrainer:
             task_type=TaskType.FEATURE_EXTRACTION,
         )
     
+    def train_lora_from_images(
+        self, 
+        person_id: str, 
+        pipeline: StableDiffusion3Pipeline,
+        num_train_epochs: int = 100,
+        learning_rate: float = 1e-4,
+        source_person_id: Optional[str] = None
+    ) -> None:
+        """
+        Train LoRA weights for a specific person using stored images.
+        
+        Args:
+            person_id: Target person identifier
+            pipeline: SD3 pipeline to train on
+            num_train_epochs: Number of training epochs
+            learning_rate: Learning rate for training
+            source_person_id: If provided, copy images from this person first
+        """
+        logger.info(f"Starting LoRA training for person_id: {person_id}")
+        
+        # Import image manager
+        from .image_manager import ImageManager
+        image_manager = ImageManager()
+        
+        # Copy images if source specified
+        if source_person_id:
+            logger.info(f"Copying images from {source_person_id} to {person_id}")
+            copy_result = image_manager.copy_images(source_person_id, person_id)
+            logger.info(f"Copied {copy_result['num_images']} images")
+        
+        # Load images for training
+        images = image_manager.get_images(person_id)
+        if not images:
+            raise ValueError(f"No images found for person_id: {person_id}")
+        
+        logger.info(f"Training with {len(images)} images for {person_id}")
+        
+        # Continue with existing training logic
+        self._train_with_images(person_id, images, pipeline, num_train_epochs, learning_rate)
+    
     def train_lora(
         self, 
         person_id: str, 
@@ -47,10 +87,24 @@ class LoRATrainer:
         learning_rate: float = 1e-4
     ) -> None:
         """
-        Train LoRA weights for a specific person using DreamBooth-style approach.
+        Legacy method: Train LoRA weights directly with provided images.
         """
         logger.info(f"Starting LoRA training for person_id: {person_id}")
         logger.info(f"Received {len(images)} images for training")
+        
+        self._train_with_images(person_id, images, pipeline, num_train_epochs, learning_rate)
+    
+    def _train_with_images(
+        self, 
+        person_id: str, 
+        images: List[Image.Image], 
+        pipeline: StableDiffusion3Pipeline,
+        num_train_epochs: int = 100,
+        learning_rate: float = 1e-4
+    ) -> None:
+        """
+        Internal method to train LoRA with images.
+        """
         
         try:
             # Create training prompts with unique identifier
