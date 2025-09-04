@@ -341,13 +341,58 @@ async def get_training_status(child_id: str) -> TrainingStatusResponse:
     try:
         # Get training status from simple storage
         status_info = simple_storage.get_training_status(child_id)
+        logger.info(f"📊 Getting training status for {child_id}: {status_info}")
+        
+        # If training is active, try to get real Celery task progress
+        real_progress = status_info["progress"]  # Default to simple storage progress
+        real_message = "Ready"
+        task_status = None
+        
+        if status_info["status"] == "training" and status_info.get("task_id"):
+            logger.info(f"🔍 Training active - checking Celery task: {status_info['task_id']}")
+            try:
+                from .tasks.training_tasks import get_task_status
+                task_status = get_task_status(status_info["task_id"])
+                logger.info(f"📋 Celery task status: {task_status}")
+                
+                if task_status["state"] == "PROGRESS":
+                    real_progress = task_status.get("progress", 0.0)
+                    real_message = task_status.get("message", "Training in progress")
+                    logger.info(f"✅ Using real progress: {real_progress}")
+                elif task_status["state"] == "SUCCESS":
+                    real_progress = 1.0
+                    real_message = "Training completed successfully"
+                    logger.info(f"🎉 Training completed successfully")
+                elif task_status["state"] == "FAILURE":
+                    real_message = f"Training failed: {task_status.get('error', 'Unknown error')}"
+                    logger.error(f"❌ Training failed: {real_message}")
+                elif task_status["state"] == "PENDING":
+                    real_progress = 0.0
+                    real_message = "Training task waiting to start..."
+                    logger.warning(f"⏳ Task still pending: {status_info['task_id']}")
+                else:
+                    real_message = f"Training status: {task_status['state']}"
+                    logger.info(f"📊 Task state: {task_status['state']}")
+                    
+            except Exception as e:
+                logger.error(f"❌ Failed to get Celery task status: {e}")
+                real_message = "Training in progress (status check failed)"
+        else:
+            if status_info["status"] == "completed":
+                real_message = "Training completed"
+            elif status_info["status"] == "not_started":
+                real_message = "Ready to start training"
+            else:
+                real_message = f"Status: {status_info['status']}"
+        
+        logger.info(f"📊 Final status - progress: {real_progress}, message: {real_message}")
         
         return TrainingStatusResponse(
             model_id=hash(status_info.get("task_id", "default")) % 2147483647,  # Convert to positive int
             child_id=child_id,
             status=status_info["status"],
-            progress=status_info["progress"],
-            message="Training in progress" if status_info["status"] == "training" else "Ready",
+            progress=real_progress,
+            message=real_message,
             loss=None,
             error=None,
             started_at=status_info.get("started_at"),
@@ -527,6 +572,28 @@ async def test_celery_worker():
     except Exception as e:
         logger.error(f"Failed to start Celery test task: {e}")
         raise HTTPException(status_code=500, detail=f"Celery test failed: {str(e)}")
+
+
+@lora_router.post("/debug/test-training-imports")
+async def test_training_imports_worker():
+    """Test training-related imports that train_lora uses."""
+    try:
+        from .tasks.training_tasks import test_training_imports
+        
+        logger.info("🔍 Starting training imports test task...")
+        task = test_training_imports.delay("debug_test", 999)
+        
+        return {
+            "message": "Training imports test task started",
+            "task_id": task.id,
+            "status": "pending",
+            "instructions": f"Check task status at /lora/debug/task-status/{task.id}",
+            "purpose": "Tests the specific imports and dependencies that train_lora requires"
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to start training imports test task: {e}")
+        raise HTTPException(status_code=500, detail=f"Training imports test failed: {str(e)}")
 
 
 @lora_router.get("/debug/task-status/{task_id}")

@@ -27,6 +27,7 @@ celery_app.conf.update(
     task_routes={
         "sd3_api.tasks.training_tasks.train_lora": {"queue": "training"},
         "sd3_api.tasks.training_tasks.test_celery": {"queue": "training"},
+        "sd3_api.tasks.training_tasks.test_training_imports": {"queue": "training"},
         "sd3_api.tasks.training_tasks.cleanup_training_data": {"queue": "cleanup"},
     },
     

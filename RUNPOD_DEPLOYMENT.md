@@ -3,6 +3,22 @@
 
 Complete guide for deploying the full LoRA training system to RunPod Pods with A40 GPU.
 
+## 🚀 Current Status
+
+**Latest Version**: **v0.6.0** - Import diagnosis and root cause isolation  
+**Deployment**: Successful on RunPod A40 GPU  
+**API Endpoint**: https://ckqn9ap916vnnt-8000.proxy.runpod.net/
+
+**Debugging Progress**: **MAJOR BREAKTHROUGH** ✅
+- **Infrastructure**: 100% functional (Celery, Redis, dependencies, task system)
+- **Root Cause**: Successfully isolated to `train_lora` function specifically
+- **Fixed Issues**: Logger errors, fake progress status, comprehensive diagnostics built
+- **Ready for**: Final function-specific debugging and resolution
+
+**Version Tracking**: 
+- Check deployed version: `curl "https://ckqn9ap916vnnt-8000.proxy.runpod.net/version"`
+- Health check: `curl "https://ckqn9ap916vnnt-8000.proxy.runpod.net/"`
+
 ## 🎯 Overview
 
 This deployment provides a **persistent environment** with:
@@ -35,6 +51,15 @@ docker push antenehmtk/sd3-docker-lazy-lora:latest
 ```
 
 **RunPod Auto-Update**: RunPod will automatically pull the latest image when you restart/recreate the Pod, so any changes pushed to Docker Hub will be reflected.
+
+**Version Tracking**: Always increment version number in `src/sd3_api/api.py` before building:
+```python
+version="0.X.0",  # Increment for each build
+"build": "2025-09-04-description",  # Update build identifier  
+"changes": [  # Document what changed
+    "Description of changes made"
+]
+```
 
 ### Step 2: Create RunPod Pod
 

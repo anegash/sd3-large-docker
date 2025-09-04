@@ -77,7 +77,7 @@ class TrainingProgressCallback:
 
 
 @celery_app.task(bind=True, name="sd3_api.tasks.training_tasks.train_lora")
-def train_lora(self, child_id: str, model_id: int, training_config: Dict[str, Any]) -> Dict[str, Any]:
+def train_lora(self, child_id, model_id, training_config):
     """
     Train LoRA adapter for a child.
     
@@ -89,13 +89,18 @@ def train_lora(self, child_id: str, model_id: int, training_config: Dict[str, An
     Returns:
         Training result dictionary
     """
-    logger.info(f"🚀 TASK STARTED: LoRA training task for child_id: {child_id}, model_id: {model_id}")
+    # FIRST LOG - Check if function is even called
+    print(f"🔥 CRITICAL: train_lora FUNCTION CALLED! child_id={child_id}, model_id={model_id}")
+    logger.info(f"🔥 CRITICAL: train_lora FUNCTION CALLED! child_id={child_id}, model_id={model_id}")
+    
+    logger.info(f"🚀 TASK EXECUTION START: LoRA training task for child_id: {child_id}, model_id: {model_id}")
     logger.info(f"📋 Training config: {training_config}")
     logger.info(f"🔧 Task request info:")
     logger.info(f"   Task ID: {self.request.id}")
     logger.info(f"   Task name: {self.request.task}")
     logger.info(f"   Retries: {self.request.retries}")
-    logger.info(f"🌍 Environment check:")
+    logger.info(f"   Delivery info: {self.request.delivery_info}")
+    logger.info(f"🌍 Environment check during execution:")
     logger.info(f"   USE_DATABASE: {USE_DATABASE}")
     logger.info(f"   db_manager: {db_manager}")
     logger.info(f"   TRAINER_AVAILABLE: {TRAINER_AVAILABLE}")
@@ -103,14 +108,42 @@ def train_lora(self, child_id: str, model_id: int, training_config: Dict[str, An
     logger.info(f"   LoRATrainer: {LoRATrainer}")
     logger.info(f"   storage_manager: {storage_manager}")
     
+    logger.info(f"🔍 Re-checking imports during task execution...")
+    # Re-check imports during execution to see if they work at runtime
+    try:
+        from ..lora.trainer import LoRATrainer as RuntimeLoRATrainer, create_training_config as runtime_create_training_config
+        logger.info(f"✅ RUNTIME: Successfully imported LoRATrainer during execution")
+        runtime_trainer_available = True
+    except Exception as e:
+        logger.error(f"❌ RUNTIME: Failed to import LoRATrainer during execution: {e}")
+        logger.error(f"   Import error type: {type(e).__name__}")
+        logger.error(f"   Import error details: {str(e)}")
+        runtime_trainer_available = False
+        
+    try:
+        from ..utils.storage import storage_manager as runtime_storage_manager
+        logger.info(f"✅ RUNTIME: Successfully imported storage_manager during execution")
+        runtime_storage_available = True
+    except Exception as e:
+        logger.error(f"❌ RUNTIME: Failed to import storage_manager during execution: {e}")
+        logger.error(f"   Import error type: {type(e).__name__}")
+        logger.error(f"   Import error details: {str(e)}")
+        runtime_storage_available = False
+    
     # Check dependencies before proceeding
-    if not TRAINER_AVAILABLE:
-        error_msg = "LoRATrainer not available - import failed"
+    logger.info(f"🔍 Dependency check results:")
+    logger.info(f"   Module level - TRAINER_AVAILABLE: {TRAINER_AVAILABLE}")
+    logger.info(f"   Module level - STORAGE_AVAILABLE: {STORAGE_AVAILABLE}")  
+    logger.info(f"   Runtime level - trainer_available: {runtime_trainer_available}")
+    logger.info(f"   Runtime level - storage_available: {runtime_storage_available}")
+    
+    if not TRAINER_AVAILABLE and not runtime_trainer_available:
+        error_msg = "LoRATrainer not available - import failed at both module and runtime level"
         logger.error(f"💥 DEPENDENCY ERROR: {error_msg}")
         raise RuntimeError(error_msg)
         
-    if not STORAGE_AVAILABLE:
-        error_msg = "storage_manager not available - import failed"
+    if not STORAGE_AVAILABLE and not runtime_storage_available:
+        error_msg = "storage_manager not available - import failed at both module and runtime level"  
         logger.error(f"💥 DEPENDENCY ERROR: {error_msg}")
         raise RuntimeError(error_msg)
     
@@ -252,6 +285,76 @@ def test_celery() -> Dict[str, Any]:
     return result
 
 
+@celery_app.task(bind=True, name="sd3_api.tasks.training_tasks.test_training_imports")
+def test_training_imports(self, child_id: str, model_id: int) -> Dict[str, Any]:
+    """Test task to isolate import failures without complex dependencies."""
+    # CRITICAL: First log to verify function is called
+    print(f"🔥 CRITICAL: test_training_imports FUNCTION CALLED! child_id={child_id}")
+    logger.info(f"🔥 CRITICAL: test_training_imports FUNCTION CALLED! child_id={child_id}")
+    
+    logger.info(f"🧪 Testing imports that train_lora needs...")
+    
+    # Test basic imports first
+    try:
+        import torch
+        logger.info(f"✅ torch import successful: {torch.__version__}")
+    except Exception as e:
+        logger.error(f"❌ torch import failed: {e}")
+        return {"status": "failed", "error": "torch import failed", "details": str(e)}
+    
+    # Test relative imports like train_lora uses
+    try:
+        logger.info(f"🔍 Testing relative import: ..lora.trainer")
+        from ..lora.trainer import LoRATrainer, create_training_config
+        logger.info(f"✅ LoRATrainer import successful")
+    except Exception as e:
+        logger.error(f"❌ LoRATrainer import failed: {e}")
+        import traceback
+        logger.error(f"   Full traceback: {traceback.format_exc()}")
+        return {"status": "failed", "error": "LoRATrainer import failed", "details": str(e)}
+    
+    try:
+        logger.info(f"🔍 Testing relative import: ..utils.storage")
+        from ..utils.storage import storage_manager
+        logger.info(f"✅ storage_manager import successful")
+    except Exception as e:
+        logger.error(f"❌ storage_manager import failed: {e}")
+        import traceback
+        logger.error(f"   Full traceback: {traceback.format_exc()}")
+        return {"status": "failed", "error": "storage_manager import failed", "details": str(e)}
+    
+    # Test creating trainer instance (lightweight test)
+    try:
+        logger.info(f"🔍 Testing LoRATrainer instantiation...")
+        config = create_training_config(
+            training_steps=10, 
+            lora_rank=16,
+            learning_rate=1e-4,
+            batch_size=1
+        )
+        logger.info(f"✅ create_training_config successful")
+        
+        # Don't actually create trainer (too heavy), just test config
+        logger.info(f"✅ Training config created successfully: {config}")
+        
+    except Exception as e:
+        logger.error(f"❌ Training config creation failed: {e}")
+        import traceback
+        logger.error(f"   Full traceback: {traceback.format_exc()}")
+        return {"status": "failed", "error": "Training config failed", "details": str(e)}
+    
+    result = {
+        "status": "success",
+        "child_id": child_id,
+        "model_id": model_id,
+        "message": "All imports and basic operations successful",
+        "torch_version": torch.__version__ if 'torch' in locals() else "unknown"
+    }
+    
+    logger.info(f"🎉 test_training_imports completed successfully: {result}")
+    return result
+
+
 @celery_app.task(name="sd3_api.tasks.training_tasks.cleanup_training_data")
 def cleanup_training_data(child_id: str) -> Dict[str, Any]:
     """
@@ -360,10 +463,24 @@ def start_training_task(child_id: str, model_id: int, training_config: Dict[str,
         logger.info(f"   training_config: {training_config}")
         
         logger.info(f"📋 About to call train_lora.delay()...")
+        logger.info(f"🔍 Celery app info: {celery_app}")
+        logger.info(f"🔍 train_lora task info: {train_lora}")
+        logger.info(f"🔍 train_lora task name: {train_lora.name}")
+        
+        # Try to dispatch the task
         task = train_lora.delay(child_id, model_id, training_config)
-        logger.info(f"🎊 SUCCESS! Training task created with ID: {task.id}")
+        
+        logger.info(f"🎊 SUCCESS! Training task dispatched with ID: {task.id}")
         logger.info(f"   Task state: {task.state}")
         logger.info(f"   Task status: {task.status}")
+        logger.info(f"   Task result: {task.result}")
+        logger.info(f"   Task info: {task.info}")
+        
+        # Wait a moment and check task state again
+        import time
+        time.sleep(2)
+        logger.info(f"📊 Task state after 2 seconds: {task.state}")
+        logger.info(f"📊 Task info after 2 seconds: {task.info}")
         
         return task.id
         
