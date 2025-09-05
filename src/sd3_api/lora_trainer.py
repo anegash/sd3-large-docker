@@ -268,6 +268,11 @@ class LoRATrainer:
                         # Concatenate along feature dimension
                         prompt_embeds = torch.cat([prompt_embeds_1, prompt_embeds_2], dim=-1)
                     
+                    # Clean up variables to avoid PEFT parameter conflicts
+                    del text_inputs, text_inputs_2, text_encoder_output, text_encoder_2_output
+                    del prompt_embeds_1, prompt_embeds_2
+                    torch.cuda.empty_cache()  # Clear GPU memory
+                    
                     # Convert to latents - should work now without CPU offloading
                     with torch.no_grad():
                         latents = pipeline.vae.encode(pixel_values).latent_dist.sample()
@@ -284,7 +289,8 @@ class LoRATrainer:
                     noisy_latents = pipeline.scheduler.add_noise(latents, noise, timesteps)
                     
                     # Predict noise with explicit parameters only
-                    model_pred = pipeline.unet(
+                    # Use forward method explicitly to avoid parameter conflicts
+                    model_pred = pipeline.unet.forward(
                         sample=noisy_latents,
                         timestep=timesteps,
                         encoder_hidden_states=prompt_embeds,
