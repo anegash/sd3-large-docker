@@ -242,17 +242,29 @@ class LoRATrainer:
                 
             # Only unfreeze attention layers for personalization training
             trainable_params = []
+            target_layer_names = [
+                'attn1.to_q', 'attn1.to_k', 'attn1.to_v', 'attn1.to_out',  # Self attention
+                'attn2.to_q', 'attn2.to_k', 'attn2.to_v', 'attn2.to_out',  # Cross attention  
+                'ff.net.0', 'ff.net.2'  # Feed forward layers
+            ]
+            
+            # First, let's see what layers are available
+            layer_names = []
             for name, module in pipeline.unet.named_modules():
-                if any(layer_name in name for layer_name in [
-                    'attn1.to_q', 'attn1.to_k', 'attn1.to_v', 'attn1.to_out',  # Self attention
-                    'attn2.to_q', 'attn2.to_k', 'attn2.to_v', 'attn2.to_out',  # Cross attention  
-                    'ff.net.0', 'ff.net.2'  # Feed forward layers
-                ]):
+                if name is not None and ('attn' in name or 'ff' in name):
+                    layer_names.append(name)
+            
+            logger.info(f"Available attention/ff layers: {layer_names[:10]}...")  # Show first 10
+            
+            # Now unfreeze matching layers
+            for name, module in pipeline.unet.named_modules():
+                if name is not None and any(layer_name in name for layer_name in target_layer_names):
+                    logger.info(f"Unfreezing layer: {name}")
                     for param in module.parameters():
                         param.requires_grad = True
                         trainable_params.append(param)
                         
-            logger.info(f"Unfroze {len(trainable_params)} parameters in attention layers")
+            logger.info(f"Unfroze {len(trainable_params)} parameters in {len([n for n, m in pipeline.unet.named_modules() if n is not None and any(ln in n for ln in target_layer_names)])} layers")
             
             # Set UNet to training mode
             pipeline.unet.train()
