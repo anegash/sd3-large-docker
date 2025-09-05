@@ -105,6 +105,20 @@ python setup_runpod.py
 # Requires HUGGINGFACE_TOKEN environment variable in RunPod settings
 ```
 
+### Deployment Workflow (IMPORTANT)
+**The application runs on RunPod, NOT locally. Always follow this workflow:**
+
+1. **Local Development**: Make code changes locally
+2. **Commit Changes**: `git add . && git commit -m "description"`  
+3. **Push to Remote**: `git push` (if working on shared branch)
+4. **RunPod Deployment**: 
+   - SSH/connect to RunPod instance
+   - `git pull` to get latest changes
+   - `./stop_runpod.sh && ./start_runpod.sh` to restart server
+5. **Test**: Use RunPod URL (e.g., `https://xyz-8000.proxy.runpod.net/`) for testing
+
+**Never run deployment scripts locally** - they are meant for RunPod environment.
+
 ### API Usage
 ```bash
 # Health check
