@@ -235,21 +235,31 @@ class LoRATrainer:
                     pixel_values = batch["pixel_values"].to(device, dtype=dtype)
                     prompt = batch["prompt"][0] if isinstance(batch["prompt"], list) else batch["prompt"]
                     
-                    # Encode text prompt using pipeline's method
+                    # Encode text prompt manually to avoid parameter conflicts
                     with torch.no_grad():
-                        (
-                            prompt_embeds,
-                            negative_prompt_embeds,
-                            pooled_prompt_embeds,
-                            negative_pooled_prompt_embeds,
-                        ) = pipeline.encode_prompt(
+                        # Tokenize text
+                        text_inputs = pipeline.tokenizer(
                             prompt,
-                            device=device,
-                            num_images_per_prompt=1,
-                            do_classifier_free_guidance=False
-                        )
-                        # Use only the positive prompt embeddings
-                        prompt_embeds = prompt_embeds
+                            padding="max_length",
+                            max_length=77,
+                            truncation=True,
+                            return_tensors="pt"
+                        ).to(device)
+                        
+                        text_inputs_2 = pipeline.tokenizer_2(
+                            prompt,
+                            padding="max_length", 
+                            max_length=77,
+                            truncation=True,
+                            return_tensors="pt"
+                        ).to(device)
+                        
+                        # Get embeddings
+                        prompt_embeds_1 = pipeline.text_encoder(text_inputs.input_ids)[0]
+                        prompt_embeds_2 = pipeline.text_encoder_2(text_inputs_2.input_ids)[0]
+                        
+                        # Concatenate embeddings for SDXL
+                        prompt_embeds = torch.cat([prompt_embeds_1, prompt_embeds_2], dim=-1)
                     
                     # Convert to latents - should work now without CPU offloading
                     with torch.no_grad():
