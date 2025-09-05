@@ -32,6 +32,9 @@ class HealthResponse(BaseModel):
     
     message: str = Field(..., description="Health status message")
     device: str = Field(..., description="Device being used for inference")
+    version: str = Field(..., description="API version")
+    branch: str = Field(..., description="Git branch")
+    commit: str = Field(..., description="Git commit hash")
 
 
 class UploadImagesRequest(BaseModel):

@@ -4,6 +4,7 @@ import asyncio
 import base64
 import io
 import logging
+import subprocess
 from contextlib import asynccontextmanager
 from typing import List, Optional, Union
 
@@ -25,6 +26,37 @@ from .models import (
 from .pipeline import SDXLPipeline
 
 logger = logging.getLogger(__name__)
+
+
+def get_version_info() -> dict:
+    """Get version information from git."""
+    try:
+        # Get current branch
+        branch = subprocess.check_output(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"], 
+            cwd=".", 
+            universal_newlines=True
+        ).strip()
+        
+        # Get current commit hash
+        commit = subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"], 
+            cwd=".", 
+            universal_newlines=True
+        ).strip()
+        
+        return {
+            "version": "1.0.0",  # API version
+            "branch": branch,
+            "commit": commit
+        }
+    except Exception as e:
+        logger.warning(f"Failed to get git info: {e}")
+        return {
+            "version": "1.0.0",
+            "branch": "unknown",
+            "commit": "unknown"
+        }
 
 
 @asynccontextmanager
@@ -85,7 +117,16 @@ async def health_check() -> HealthResponse:
     else:
         status = pipeline.status
 
-    return HealthResponse(message="Stable Diffusion XL API is running!", device=status)
+    # Get version information
+    version_info = get_version_info()
+
+    return HealthResponse(
+        message="Stable Diffusion XL API is running!", 
+        device=status,
+        version=version_info["version"],
+        branch=version_info["branch"], 
+        commit=version_info["commit"]
+    )
 
 
 @app.get("/generate", response_model=Union[GenerateResponse, ErrorResponse])
