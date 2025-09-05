@@ -1,34 +1,21 @@
 #!/usr/bin/env python3
-"""
-RunPod Setup Script for SD3.5 Large LoRA Training System
-
-This script sets up a persistent environment on RunPod with all dependencies
-installed in /workspace so they persist across pod restarts.
-"""
+"""RunPod Setup Script for SD3.5 Large LoRA Training System"""
 
 import os
 import subprocess
 import sys
 from pathlib import Path
 
-
-def run_command(cmd, description="", check=True, shell=True):
+def run_command(cmd, description="", check=True):
     """Run a command and handle errors."""
     print(f"🔄 {description}")
-    print(f"   Command: {cmd}")
-    
     try:
-        result = subprocess.run(cmd, shell=shell, check=check, 
-                              capture_output=True, text=True)
+        result = subprocess.run(cmd, shell=True, check=check, capture_output=True, text=True)
         if result.stdout:
             print(f"   ✅ {result.stdout.strip()}")
         return result
     except subprocess.CalledProcessError as e:
         print(f"   ❌ Error: {e}")
-        if e.stdout:
-            print(f"   stdout: {e.stdout}")
-        if e.stderr:
-            print(f"   stderr: {e.stderr}")
         if check:
             sys.exit(1)
         return e
@@ -36,246 +23,71 @@ def run_command(cmd, description="", check=True, shell=True):
 
 def setup_workspace():
     """Set up workspace directories."""
-    print("\n📁 Setting up workspace directories...")
-    
-    workspace_dirs = [
-        "/workspace/lora_weights",
-        "/workspace/models", 
-        "/workspace/huggingface_cache",
-        "/workspace/logs",
-        "/workspace/venv"
-    ]
+    print("📁 Setting up workspace directories...")
+    workspace_dirs = ["/workspace/lora_weights", "/workspace/huggingface_cache", "/workspace/logs"]
     
     for dir_path in workspace_dirs:
         Path(dir_path).mkdir(parents=True, exist_ok=True)
-        print(f"   ✅ Created: {dir_path}")
     
-    # Verify we're in the right project directory
     if not Path("/workspace/sd3-large-docker/pyproject.toml").exists():
-        print("   ❌ Project not found at /workspace/sd3-large-docker")
-        print("   📂 Please ensure you've cloned the repo to /workspace/sd3-large-docker")
+        print("❌ Project not found at /workspace/sd3-large-docker")
         return False
-    else:
-        print("   ✅ Project found at /workspace/sd3-large-docker")
-        return True
+    return True
 
-
-def install_system_dependencies():
-    """Install system-level dependencies."""
-    print("\n🔧 Installing system dependencies...")
+def install_dependencies():
+    """Install system dependencies and Poetry environment."""
+    print("🔧 Installing dependencies...")
+    run_command("apt update && apt install -y curl git", "Installing system packages")
+    run_command("curl -sSL https://install.python-poetry.org | python3 -", "Installing Poetry")
     
-    commands = [
-        ("apt update", "Updating package lists"),
-        ("apt install -y curl wget git build-essential", "Installing basic tools"),
-        ("curl -sSL https://install.python-poetry.org | python3 -", "Installing Poetry")
-    ]
-    
-    for cmd, desc in commands:
-        run_command(cmd, desc)
-    
-    # Add poetry to PATH for this session
     os.environ["PATH"] = f"/root/.local/bin:{os.environ.get('PATH', '')}"
-
-
-def setup_python_environment():
-    """Set up Python environment with Poetry."""
-    print("\n🐍 Setting up Python environment...")
-    
-    # Change to project directory (already exists at /workspace/sd3-large-docker)
     os.chdir("/workspace/sd3-large-docker")
-    print(f"   📂 Working in: {os.getcwd()}")
     
-    # Configure Poetry to use workspace venv
-    commands = [
-        ("poetry config virtualenvs.path /workspace/venv", "Configuring Poetry venv path"),
-        ("poetry config virtualenvs.create true", "Enabling Poetry venv creation"),
-        ("poetry config virtualenvs.in-project false", "Setting Poetry venv location"),
-        ("poetry install --only main", "Installing main dependencies"),
-        ("poetry install --with dev", "Installing development dependencies")
-    ]
-    
-    for cmd, desc in commands:
-        run_command(cmd, desc)
-
+    run_command("poetry config virtualenvs.path /workspace/venv", "Configuring Poetry")
+    run_command("poetry install --only main", "Installing Python dependencies")
 
 def setup_huggingface_auth():
     """Set up HuggingFace authentication."""
-    print("\n🤗 Setting up HuggingFace authentication...")
-    
-    # Check if token is provided via environment (RunPod uses HF_TOKEN)
+    print("🤗 Setting up HuggingFace authentication...")
     hf_token = os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACE_TOKEN")
     
     if not hf_token:
-        print("   ⚠️  No HF_TOKEN or HUGGINGFACE_TOKEN found in environment")
-        print("   📝 Please set HF_TOKEN in your RunPod environment variables")
-        print("   🔗 Get your token from: https://huggingface.co/settings/tokens")
+        print("⚠️  Set HF_TOKEN in RunPod environment variables")
         return False
     
-    # Save token to project .env file (use HUGGINGFACE_TOKEN for consistency in app)
     env_path = Path("/workspace/sd3-large-docker/.env")
     with open(env_path, "w") as f:
         f.write(f"HUGGINGFACE_TOKEN={hf_token}\n")
-        f.write(f"HF_TOKEN={hf_token}\n")
-        f.write(f"WORKSPACE_DIR=/workspace\n")
         f.write(f"HF_HOME=/workspace/huggingface_cache\n")
-    
-    print(f"   ✅ HuggingFace token saved to {env_path}")
     return True
 
-
-def setup_environment_variables():
-    """Set up persistent environment variables."""
-    print("\n🌍 Setting up environment variables...")
-    
-    # Create bashrc additions for persistent env vars
-    bashrc_additions = """
-# SD3 LoRA Training System Environment
-export WORKSPACE_DIR=/workspace
-export HF_HOME=/workspace/huggingface_cache
-export TRANSFORMERS_CACHE=/workspace/huggingface_cache/transformers
-export HF_DATASETS_CACHE=/workspace/huggingface_cache/datasets
-export PATH="/root/.local/bin:$PATH"
-
-# SD3 LoRA Training System aliases
-alias sd3-env="cd /workspace/sd3-large-docker && poetry shell"
-alias sd3-start="/workspace/start_sd3.sh"
-alias sd3-stop="/workspace/stop_sd3.sh"
-alias sd3-logs="tail -f /workspace/logs/sd3_server.log"
-alias sd3-status="curl -s http://localhost:8000/ | jq . || curl -s http://localhost:8000/"
-"""
-    
-    with open("/root/.bashrc", "a") as f:
-        f.write(bashrc_additions)
-    
-    print("   ✅ Environment variables added to ~/.bashrc")
-
-
 def create_startup_script():
-    """Create startup script for the service."""
-    print("\n🚀 Creating startup script...")
-    
-    startup_script = """#!/bin/bash
-# SD3 LoRA Training System Startup Script
-
-echo "🚀 Starting SD3 LoRA Training System..."
-
-# Set environment variables
-export WORKSPACE_DIR=/workspace
+    """Create startup script."""
+    print("🚀 Creating startup script...")
+    script = """#!/bin/bash
 export HF_HOME=/workspace/huggingface_cache
-export TRANSFORMERS_CACHE=/workspace/huggingface_cache/transformers
-export HF_DATASETS_CACHE=/workspace/huggingface_cache/datasets
 export PATH="/root/.local/bin:$PATH"
-
-# Change to project directory
 cd /workspace/sd3-large-docker
-
-# Load environment variables from .env
-if [ -f .env ]; then
-    export $(cat .env | xargs)
-fi
-
-echo "📋 Environment Status:"
-echo "   Workspace: $WORKSPACE_DIR"
-echo "   HuggingFace Cache: $HF_HOME"
-echo "   Project Dir: $(pwd)"
-
-# Start the server
-echo "🔥 Starting FastAPI server..."
+[ -f .env ] && export $(cat .env | xargs)
 poetry run python main.py
 """
     
-    start_script_path = Path("/workspace/start_sd3.sh")
-    with open(start_script_path, "w") as f:
-        f.write(startup_script)
-    
-    # Make executable
-    start_script_path.chmod(0o755)
-    
-    # Copy stop script to workspace
-    import shutil
-    stop_script_src = Path("/workspace/sd3-large-docker/stop_runpod.sh")
-    stop_script_dst = Path("/workspace/stop_sd3.sh")
-    if stop_script_src.exists():
-        shutil.copy2(stop_script_src, stop_script_dst)
-        stop_script_dst.chmod(0o755)
-        print(f"   ✅ Stop script created: {stop_script_dst}")
-    
-    print(f"   ✅ Startup script created: {start_script_path}")
-
-
-def test_installation():
-    """Test the installation."""
-    print("\n🧪 Testing installation...")
-    
-    os.chdir("/workspace/sd3-large-docker")
-    
-    # Test Poetry environment
-    result = run_command("poetry run python -c 'import torch; import diffusers; import peft; print(\"✅ All packages imported successfully\")'", 
-                        "Testing package imports", check=False)
-    
-    if result.returncode != 0:
-        print("   ❌ Package import test failed")
-        return False
-    
-    # Test CUDA availability
-    result = run_command("poetry run python -c 'import torch; print(f\"CUDA available: {torch.cuda.is_available()}\")'",
-                        "Testing CUDA availability", check=False)
-    
-    print("   ✅ Installation test completed")
-    return True
-
+    with open("/workspace/start_sd3.sh", "w") as f:
+        f.write(script)
+    Path("/workspace/start_sd3.sh").chmod(0o755)
 
 def main():
     """Main setup function."""
-    print("🎯 SD3.5 Large LoRA Training System - RunPod Setup")
-    print("=" * 60)
+    print("🎯 SD3.5 Large - RunPod Setup")
     
-    print("📋 This script will:")
-    print("   • Set up persistent directories in /workspace")
-    print("   • Install Poetry and Python dependencies") 
-    print("   • Configure HuggingFace authentication")
-    print("   • Create startup scripts")
-    print("   • Set up environment variables")
-    
-    input("\n⏳ Press Enter to continue...")
-    
-    try:
-        # Run setup steps
-        if not setup_workspace():
-            sys.exit(1)
-        install_system_dependencies()
-        setup_python_environment()
-        
-        if setup_huggingface_auth():
-            print("   ✅ HuggingFace authentication configured")
-        else:
-            print("   ⚠️  HuggingFace authentication needs manual setup")
-        
-        setup_environment_variables()
-        create_startup_script()
-        
-        if test_installation():
-            print("\n🎉 Setup completed successfully!")
-            print("\n📖 Next steps:")
-            print("   1. Restart your terminal or run: source ~/.bashrc")
-            print("   2. Start the server: /workspace/start_sd3.sh")
-            print("   3. Server will run in background")
-            print("   4. API will be available at: http://localhost:8000")
-            print("   5. Documentation: http://localhost:8000/docs")
-            
-            print("\n🔧 Useful aliases (available after restart):")
-            print("   • sd3-start    : Start the server in background")
-            print("   • sd3-stop     : Stop the server")
-            print("   • sd3-status   : Check server health")
-            print("   • sd3-logs     : View server logs")
-            print("   • sd3-env      : Activate Poetry environment")
-            
-        else:
-            print("\n⚠️  Setup completed with warnings. Check the logs above.")
-            
-    except Exception as e:
-        print(f"\n❌ Setup failed: {e}")
+    if not setup_workspace():
         sys.exit(1)
+    install_dependencies()
+    setup_huggingface_auth()
+    create_startup_script()
+    
+    print("🎉 Setup complete!")
+    print("Start server: /workspace/start_sd3.sh")
 
 
 if __name__ == "__main__":

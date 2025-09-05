@@ -89,6 +89,15 @@ docker run -p 8000:8000 sd3-large-api
 
 ### RunPod Deployment
 ```bash
+# Setup RunPod environment (run once)
+python setup_runpod.py
+
+# Start server on RunPod
+./start_runpod.sh
+
+# Stop server
+./stop_runpod.sh
+
 # Deploy to RunPod Serverless
 # The Dockerfile is configured to run handler.py by default for serverless deployment
 # Requires HUGGINGFACE_TOKEN environment variable in RunPod settings
@@ -135,11 +144,14 @@ src/sd3_api/
 ├── models.py            # Pydantic request/response models
 └── pipeline.py          # SD3 pipeline management
 
-Additional files:
-├── handler.py           # RunPod serverless handler
+Setup & deployment files:
 ├── main.py              # FastAPI server entry point
+├── handler.py           # RunPod serverless handler
+├── setup_env.sh         # Local development setup
 ├── setup_huggingface.py # HuggingFace authentication setup
-└── setup_env.sh         # Environment setup script
+├── setup_runpod.py      # RunPod environment setup
+├── start_runpod.sh      # RunPod server startup script
+└── stop_runpod.sh       # RunPod server shutdown script
 ```
 
 ### Configuration

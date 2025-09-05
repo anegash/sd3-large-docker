@@ -23,14 +23,13 @@ Successfully deployed SD3.5 Large API with LoRA (Low-Rank Adaptation) training f
 1. **LoRA Training Module** (`src/sd3_api/lora_trainer.py`)
 2. **Extended Pipeline** (`src/sd3_api/pipeline.py`) - LoRA weight management
 3. **API Endpoints** (`src/sd3_api/api.py`) - Training and generation
-4. **RunPod Scripts** (`setup_runpod.py`, `init_runpod.sh`, `start_runpod.sh`)
+4. **RunPod Scripts** (`setup_runpod.py`, `start_runpod.sh`, `stop_runpod.sh`)
 
 ## 🗂️ Persistent Storage Structure
 
 ```
 /workspace/
 ├── sd3-large-docker/         # Project code (git repo)
-├── venv/                     # Poetry virtual environment
 ├── huggingface_cache/        # SD3.5 model cache (~8GB)
 ├── lora_weights/             # Trained LoRA weights per person
 ├── logs/                     # Server logs and PID files
@@ -42,8 +41,8 @@ Successfully deployed SD3.5 Large API with LoRA (Low-Rank Adaptation) training f
 
 ### Initial Deployment:
 ```bash
-# Clone the LoRA training branch
-git clone -b feature/lora-training-runpod https://github.com/anegash/sd3-large-docker.git /workspace/sd3-large-docker
+# Clone the repository  
+git clone https://github.com/anegash/sd3-large-docker.git /workspace/sd3-large-docker
 
 # One-time comprehensive setup
 cd /workspace/sd3-large-docker
@@ -52,38 +51,26 @@ python3 setup_runpod.py  # Uses HF_TOKEN from RunPod environment
 
 ### After Pod Restart:
 ```bash
-# Quick initialization
-cd /workspace/sd3-large-docker && ./init_runpod.sh && source ~/.bashrc
-
-# Start server in background
-sd3-start
-```
-
-### Manual Setup (if needed):
-```bash
+# Start server
 cd /workspace/sd3-large-docker
-./init_runpod.sh  # Sets up Poetry, env vars, aliases
-source ~/.bashrc  # Load aliases
-sd3-start         # Start server
+./start_runpod.sh
 ```
 
 ## 🔧 Server Management
 
-### Commands Available:
+### Commands:
 ```bash
-sd3-start     # Start server in background
-sd3-stop      # Stop the server
-sd3-status    # Check server health (curl localhost:8000)
-sd3-logs      # View live server logs
-sd3-env       # Activate Poetry environment
-```
+# Start server in background
+./start_runpod.sh
 
-### Direct Commands:
-```bash
-/workspace/start_sd3.sh      # Start server
-/workspace/stop_sd3.sh       # Stop server
-curl http://localhost:8000/  # Health check
-tail -f /workspace/logs/sd3_server.log  # View logs
+# Stop server  
+./stop_runpod.sh
+
+# Check server health
+curl http://localhost:8000/
+
+# View logs
+tail -f /workspace/logs/sd3_server.log
 ```
 
 ## 🎨 API Endpoints
@@ -119,11 +106,10 @@ curl -X DELETE "http://localhost:8000/lora/john_doe"
 ## 🐛 Troubleshooting
 
 ### Common Issues Fixed:
-1. **Poetry not found**: Fixed by `init_runpod.sh` auto-installation
-2. **Missing aliases**: Fixed by automatic bashrc setup
-3. **Corrupted model cache**: `rm -rf /workspace/huggingface_cache/*`
-4. **TaskType.DIFFUSION error**: Fixed by using `TaskType.FEATURE_EXTRACTION`
-5. **Lock file conflicts**: Updated `poetry.lock` with new dependencies
+1. **Poetry not found**: Fixed by `start_runpod.sh` auto-installation
+2. **Corrupted model cache**: `rm -rf /workspace/huggingface_cache/*`
+3. **TaskType.DIFFUSION error**: Fixed by using `TaskType.FEATURE_EXTRACTION`
+4. **Lock file conflicts**: Updated `poetry.lock` with new dependencies
 
 ### Environment Variables:
 - `HF_TOKEN`: HuggingFace token (set in RunPod environment)
@@ -141,6 +127,6 @@ curl -X DELETE "http://localhost:8000/lora/john_doe"
 ### Key Success Factors:
 - Persistent storage prevents re-downloading models
 - Background execution allows terminal usage
-- Automatic initialization handles pod restarts
+- Simplified setup scripts reduce complexity
 - LoRA weights persist across sessions
 - Comprehensive error handling and logging
