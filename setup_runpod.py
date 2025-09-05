@@ -20,7 +20,6 @@ def run_command(cmd, description="", check=True):
             sys.exit(1)
         return e
 
-
 def setup_workspace():
     """Set up workspace directories."""
     print("📁 Setting up workspace directories...")
@@ -29,21 +28,9 @@ def setup_workspace():
     for dir_path in workspace_dirs:
         Path(dir_path).mkdir(parents=True, exist_ok=True)
     
-    # Auto-detect project directory
-    project_dirs = ["/workspace/sdxl-api", "/workspace/sd3-large-docker"]
-    project_dir = None
-    
-    for dir_path in project_dirs:
-        if Path(f"{dir_path}/pyproject.toml").exists():
-            project_dir = dir_path
-            print(f"✅ Found project at {project_dir}")
-            break
-    
-    if not project_dir:
-        print("❌ Project not found in expected locations")
+    if not Path("pyproject.toml").exists():
+        print("❌ Project not found - run this from the project directory")
         return False
-    
-    os.environ["PROJECT_DIR"] = project_dir
     return True
 
 def install_dependencies():
@@ -53,8 +40,6 @@ def install_dependencies():
     run_command("curl -sSL https://install.python-poetry.org | python3 -", "Installing Poetry")
     
     os.environ["PATH"] = f"/root/.local/bin:{os.environ.get('PATH', '')}"
-    project_dir = os.environ.get("PROJECT_DIR", "/workspace/sdxl-api")
-    os.chdir(project_dir)
     
     run_command("poetry config virtualenvs.path /workspace/venv", "Configuring Poetry")
     run_command("poetry install --only main", "Installing Python dependencies")
@@ -68,9 +53,7 @@ def setup_huggingface_auth():
         print("⚠️  Set HF_TOKEN in RunPod environment variables")
         return False
     
-    project_dir = os.environ.get("PROJECT_DIR", "/workspace/sdxl-api")
-    env_path = Path(f"{project_dir}/.env")
-    with open(env_path, "w") as f:
+    with open(".env", "w") as f:
         f.write(f"HUGGINGFACE_TOKEN={hf_token}\n")
         f.write(f"HF_HOME=/workspace/huggingface_cache\n")
     return True
@@ -81,13 +64,10 @@ def create_startup_script():
     script = """#!/bin/bash
 export HF_HOME=/workspace/huggingface_cache
 export PATH="/root/.local/bin:$PATH"
-cd ${PROJECT_DIR:-/workspace/sdxl-api}
+cd /workspace/sdxl-api
 [ -f .env ] && export $(cat .env | xargs)
 poetry run python main.py
 """
-    
-    project_dir = os.environ.get("PROJECT_DIR", "/workspace/sdxl-api")
-    script = script.replace("${PROJECT_DIR:-/workspace/sdxl-api}", project_dir)
     
     with open("/workspace/start_sdxl.sh", "w") as f:
         f.write(script)
@@ -104,8 +84,7 @@ def main():
     create_startup_script()
     
     print("🎉 Setup complete!")
-    print("Start server: /workspace/start_sdxl.sh")
-
+    print("Start server: ./start_runpod.sh")
 
 if __name__ == "__main__":
     main()
