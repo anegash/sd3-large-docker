@@ -157,6 +157,19 @@ class SDXLPipeline:
         if person_id and person_id != self.current_lora_id:
             self.load_lora_weights(person_id)
         
+        # Modify prompt to use unique token if person_id is provided
+        original_prompt = prompt
+        if person_id:
+            # Replace references to the person with the unique token
+            unique_token = f"sks {person_id}"
+            # Common replacements
+            prompt = prompt.replace(person_id, unique_token)
+            prompt = prompt.replace("person", unique_token)
+            # If prompt doesn't contain the token, prepend it
+            if unique_token not in prompt and "sks" not in prompt:
+                prompt = f"{unique_token}, {prompt}"
+            logger.info(f"Modified prompt for LoRA: '{prompt[:100]}...'")
+        
         logger.info(f"Generating SDXL image with prompt: '{prompt[:50]}...' "
                    f"(steps={num_inference_steps}, guidance={guidance_scale}, {width}x{height})")
         if person_id:
@@ -221,27 +234,47 @@ class SDXLPipeline:
             raise ValueError(f"No LoRA weights found for person_id: {person_id}")
         
         try:
+            # Unload current LoRA if any
+            if self.current_lora_id:
+                try:
+                    self.pipeline.unload_lora_weights()
+                except:
+                    pass  # Ignore errors when unloading
+            
             # Read metadata to check if it's actually trained
             with open(metadata_path, 'r') as f:
                 metadata = json.load(f)
             
-            if metadata.get("model_type") == "sdxl_lora_trained" and lora_dir.exists():
-                logger.info(f"Loading trained SDXL LoRA weights for {person_id}")
+            # Check for real trained model (v2) or legacy
+            if lora_dir.exists():
+                # Check if it has the adapter_model.safetensors file (real training)
+                adapter_file = lora_dir / "adapter_model.safetensors"
+                bin_file = lora_dir / "adapter_model.bin"
                 
-                # Load LoRA weights using diffusers load_lora_weights method
-                self.pipeline.load_lora_weights(str(lora_dir))
-                self.current_lora_id = person_id
-                
-                logger.info(f"Successfully loaded trained SDXL LoRA weights for {person_id}")
+                if adapter_file.exists() or bin_file.exists():
+                    logger.info(f"Loading real trained SDXL LoRA weights for {person_id}")
+                    
+                    # Load LoRA weights using PEFT format
+                    from peft import PeftModel
+                    self.pipeline.unet = PeftModel.from_pretrained(
+                        self.pipeline.unet,
+                        str(lora_dir)
+                    )
+                    self.current_lora_id = person_id
+                    
+                    logger.info(f"Successfully loaded real LoRA weights for {person_id}")
+                else:
+                    logger.warning(f"No real LoRA weights found for {person_id}, using base model")
+                    self.current_lora_id = person_id
             else:
-                logger.info(f"Loading placeholder LoRA for {person_id}")
+                logger.info(f"No LoRA directory for {person_id}, using base model")
                 self.current_lora_id = person_id
                 
         except Exception as e:
             logger.error(f"Failed to load SDXL LoRA weights for {person_id}: {e}")
-            # Fall back to placeholder mode
+            # Fall back to base model
             self.current_lora_id = person_id
-            logger.info(f"Using placeholder mode for {person_id}")
+            logger.info(f"Using base model for {person_id}")
     
     def unload_lora_weights(self) -> None:
         """Unload current SDXL LoRA weights."""

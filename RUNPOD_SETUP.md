@@ -4,7 +4,7 @@
 
 1. **Clone the repository**:
    ```bash
-   git clone https://github.com/yourusername/sd3-large-docker.git /workspace/sdxl-api
+   git clone https://github.com/anegash/sd3-large-docker.git /workspace/sdxl-api
    cd /workspace/sdxl-api
    ```
 

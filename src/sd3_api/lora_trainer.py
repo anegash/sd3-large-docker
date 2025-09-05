@@ -117,160 +117,198 @@ class LoRATrainer:
         learning_rate: float = 1e-4,
     ) -> None:
         """
-        Internal method to train SDXL LoRA with images.
+        Internal method to train SDXL LoRA with images using PEFT.
         """
+        import time
+        import torch
+        import torch.nn.functional as F
+        from torch.optim import AdamW
+        from peft import LoraConfig, get_peft_model, TaskType
+        import torchvision.transforms as transforms
 
         try:
-            # Create training prompts with unique identifier
+            # Create training prompts with unique identifier token
+            # Using a unique token helps the model learn the specific person
+            unique_token = f"sks {person_id}"  # sks is a common token for personalization
+            
             training_prompts = [
-                f"a photo of {person_id}",
-                f"portrait of {person_id}",
-                f"{person_id} smiling",
-                f"close up photo of {person_id}",
-                f"headshot of {person_id}",
-                f"picture of {person_id}",
-                f"{person_id} looking at camera",
-                f"photo of {person_id} outdoors",
+                f"a photo of {unique_token}",
+                f"a portrait of {unique_token}",
+                f"{unique_token} smiling",
+                f"a close up photo of {unique_token}",
+                f"a headshot of {unique_token}",
+                f"a picture of {unique_token}",
+                f"{unique_token} looking at camera",
+                f"a photo of {unique_token} person",
+                f"{unique_token} in professional attire",
+                f"a selfie of {unique_token}",
             ]
 
-            # Prepare image-text pairs
-            training_data = []
-            for i, image in enumerate(images):
-                prompt = training_prompts[i % len(training_prompts)]
-                training_data.append({"image": image, "text": prompt})
-
-            # Enhanced SDXL LoRA training simulation
             logger.info(
-                f"Starting enhanced SDXL LoRA training for {person_id} with {len(images)} images..."
+                f"Starting real SDXL LoRA training for {person_id} with {len(images)} images..."
             )
 
             device = pipeline.device
-
-            # Enhanced training simulation with better image processing
-            try:
-                import torchvision.transforms as transforms
-
-                # Process and analyze the training images for SDXL (1024x1024 optimal)
-                transform = transforms.Compose(
-                    [
-                        transforms.Resize((1024, 1024)),  # SDXL native resolution
-                        transforms.ToTensor(),
-                        transforms.Normalize(
-                            [0.5, 0.5, 0.5], [0.5, 0.5, 0.5]
-                        ),  # RGB normalization
-                    ]
-                )
-
-                processed_images = []
-                for i, image in enumerate(images):
-                    # Convert RGB if needed and process each image
-                    if image.mode != "RGB":
-                        image = image.convert("RGB")
-                    image_tensor = transform(image).unsqueeze(0).to(device)
-                    processed_images.append(image_tensor)
-
-                    if (i + 1) % 5 == 0:
-                        logger.info(
-                            f"Processed {i + 1}/{len(images)} training images for SDXL"
-                        )
-
-                # Enhanced training simulation with more realistic progress for SDXL
-                total_steps = min(25, num_train_epochs)  # Slightly more steps for SDXL
-                for step in range(total_steps):
-                    # Simulate more realistic training behavior
-                    progress = (step + 1) / total_steps
-                    loss_value = 0.9 * (1 - progress) + 0.08  # SDXL training curve
-
-                    logger.info(
-                        f"SDXL Training epoch {step + 1}/{total_steps} - Loss: {loss_value:.4f}"
-                    )
-
-                    # Simulate processing each image batch for UNet + text encoders
-                    for batch_idx in range(
-                        0, len(processed_images), 2
-                    ):  # Smaller batches for SDXL
-                        batch = processed_images[batch_idx : batch_idx + 2]
-                        # Simulate training computation time (SDXL is more compute intensive)
-                        import time
-
-                        time.sleep(0.4)
-
-                    if (step + 1) % 5 == 0:
-                        logger.info(f"SDXL Checkpoint: {int(progress * 100)}% complete")
-
-                # Create SDXL LoRA save directory structure
-                lora_save_dir = self.lora_weights_dir / person_id
-                lora_save_dir.mkdir(parents=True, exist_ok=True)
-
-                # Save enhanced metadata with SDXL training details
-                import json
-
-                # Ensure target_modules is JSON serializable
-                target_modules = self.lora_config.target_modules
-                if hasattr(target_modules, "__iter__") and not isinstance(
-                    target_modules, str
-                ):
-                    target_modules = list(target_modules)
-
-                training_info = {
-                    "model_version": "sdxl-lora-v1",
-                    "base_model": "stabilityai/stable-diffusion-xl-base-1.0",
-                    "num_images_processed": len(processed_images),
-                    "training_steps": total_steps,
-                    "learning_rate": learning_rate,
-                    "image_resolution": "1024x1024",
-                    "training_quality": "enhanced",
-                    "target_modules": target_modules,
-                    "lora_rank": self.lora_config.r,
-                }
-
-                # Create a placeholder LoRA weights file that diffusers can load
-                # This creates the required pytorch_lora_weights.bin file structure
-                weights_data = {
-                    "unet": {},  # Empty placeholder for UNet LoRA weights
-                    "text_encoder": {},  # Empty placeholder for text encoder weights
-                    "text_encoder_2": {},  # SDXL has two text encoders
-                }
-
-                # Save the weights file
-                import torch
-
-                torch.save(weights_data, lora_save_dir / "pytorch_lora_weights.bin")
-
-                # Also create adapter_config.json for diffusers compatibility
-                adapter_config = {
-                    "base_model_name_or_path": "stabilityai/stable-diffusion-xl-base-1.0",
-                    "lora_alpha": self.lora_config.lora_alpha,
-                    "lora_dropout": self.lora_config.lora_dropout,
-                    "r": self.lora_config.r,
-                    "target_modules": target_modules,
-                    "task_type": "FEATURE_EXTRACTION",
-                }
-
-                with open(lora_save_dir / "adapter_config.json", "w") as f:
-                    json.dump(adapter_config, f, indent=2)
-
-                with open(lora_save_dir / "training_info.json", "w") as f:
-                    json.dump(training_info, f, indent=2)
-
-                logger.info(
-                    f"Enhanced SDXL LoRA training completed - saved to {lora_save_dir}"
-                )
-
-            except Exception as e:
-                logger.error(f"Enhanced SDXL training failed: {e}")
-                logger.info("Using fallback training approach")
-
-            # Save metadata indicating training completed
-            self._save_training_metadata(
-                person_id, len(images), num_train_epochs, learning_rate
+            
+            # Configure LoRA for UNet only (most effective for personalization)
+            lora_config = LoraConfig(
+                r=32,  # Increased rank for better personalization
+                lora_alpha=32,
+                target_modules=["to_k", "to_q", "to_v", "to_out.0"],  # Key attention layers
+                lora_dropout=0.0,
             )
 
-            # Ensure we have the required weight files even in fallback mode
-            lora_save_dir = self.lora_weights_dir / person_id
-            if not (lora_save_dir / "pytorch_lora_weights.bin").exists():
-                self._create_placeholder_weights(lora_save_dir)
+            # Apply LoRA to UNet
+            pipeline.unet = get_peft_model(pipeline.unet, lora_config)
+            pipeline.unet.train()
+            
+            # Prepare optimizer
+            optimizer = AdamW(
+                pipeline.unet.parameters(),
+                lr=learning_rate,
+                weight_decay=0.01
+            )
 
+            # Image preprocessing for SDXL
+            transform = transforms.Compose([
+                transforms.Resize((1024, 1024), interpolation=transforms.InterpolationMode.BILINEAR),
+                transforms.ToTensor(),
+                transforms.Normalize([0.5], [0.5])  # Normalize to [-1, 1]
+            ])
+
+            # Process training images
+            processed_data = []
+            for i, image in enumerate(images):
+                if image.mode != "RGB":
+                    image = image.convert("RGB")
+                    
+                # Get multiple prompts per image for better training
+                for j in range(2):  # Use each image with 2 different prompts
+                    prompt_idx = (i * 2 + j) % len(training_prompts)
+                    processed_data.append({
+                        "image": transform(image).unsqueeze(0).to(device),
+                        "prompt": training_prompts[prompt_idx]
+                    })
+
+            logger.info(f"Prepared {len(processed_data)} training samples")
+
+            # Training parameters
+            actual_epochs = min(num_train_epochs, 50)  # Limit for reasonable training time
+            gradient_accumulation_steps = 4
+            
+            # Training loop
+            global_step = 0
+            for epoch in range(actual_epochs):
+                epoch_loss = 0.0
+                
+                for batch_idx, data in enumerate(processed_data):
+                    with torch.set_grad_enabled(True):
+                        # Encode text
+                        text_inputs = pipeline.tokenizer(
+                            data["prompt"],
+                            padding="max_length",
+                            max_length=77,
+                            truncation=True,
+                            return_tensors="pt"
+                        ).to(device)
+                        
+                        text_inputs_2 = pipeline.tokenizer_2(
+                            data["prompt"],
+                            padding="max_length",
+                            max_length=77,
+                            truncation=True,
+                            return_tensors="pt"
+                        ).to(device)
+                        
+                        # Get text embeddings
+                        prompt_embeds = pipeline.text_encoder(
+                            text_inputs.input_ids,
+                            output_hidden_states=True
+                        )
+                        prompt_embeds_2 = pipeline.text_encoder_2(
+                            text_inputs_2.input_ids,
+                            output_hidden_states=True
+                        )
+                        
+                        # Combine embeddings (SDXL uses both encoders)
+                        prompt_embeds = torch.cat([
+                            prompt_embeds.hidden_states[-2],
+                            prompt_embeds_2.hidden_states[-2]
+                        ], dim=-1)
+                        
+                        # Add noise to image
+                        noise = torch.randn_like(data["image"])
+                        timesteps = torch.randint(
+                            0, pipeline.scheduler.config.num_train_timesteps,
+                            (1,), device=device
+                        ).long()
+                        
+                        # Forward diffusion process
+                        noisy_images = pipeline.scheduler.add_noise(
+                            data["image"], noise, timesteps
+                        )
+                        
+                        # Predict noise
+                        model_pred = pipeline.unet(
+                            noisy_images,
+                            timesteps,
+                            encoder_hidden_states=prompt_embeds,
+                            return_dict=False
+                        )[0]
+                        
+                        # Calculate loss
+                        loss = F.mse_loss(model_pred, noise)
+                        loss = loss / gradient_accumulation_steps
+                        loss.backward()
+                        
+                        epoch_loss += loss.item()
+                        
+                        # Update weights
+                        if (batch_idx + 1) % gradient_accumulation_steps == 0:
+                            optimizer.step()
+                            optimizer.zero_grad()
+                            global_step += 1
+                
+                avg_loss = epoch_loss / len(processed_data)
+                logger.info(f"Epoch {epoch + 1}/{actual_epochs} - Loss: {avg_loss:.4f}")
+                
+                # Save checkpoint every 10 epochs
+                if (epoch + 1) % 10 == 0:
+                    logger.info(f"Checkpoint: {int((epoch + 1) / actual_epochs * 100)}% complete")
+
+            # Save the trained LoRA weights
+            lora_save_dir = self.lora_weights_dir / person_id
+            lora_save_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Save LoRA adapter
+            pipeline.unet.save_pretrained(lora_save_dir)
+            
+            # Save training metadata
+            training_info = {
+                "model_version": "sdxl-lora-v2-real",
+                "base_model": "stabilityai/stable-diffusion-xl-base-1.0",
+                "unique_token": unique_token,
+                "num_images": len(images),
+                "num_samples": len(processed_data),
+                "training_epochs": actual_epochs,
+                "learning_rate": learning_rate,
+                "lora_rank": lora_config.r,
+                "target_modules": lora_config.target_modules,
+            }
+            
+            with open(lora_save_dir / "training_info.json", "w") as f:
+                json.dump(training_info, f, indent=2)
+                
+            logger.info(f"Real LoRA training completed - saved to {lora_save_dir}")
+            
+            # Reset model to eval mode
+            pipeline.unet.eval()
+            
+            # Save metadata
+            self._save_training_metadata(
+                person_id, len(images), actual_epochs, learning_rate
+            )
+            
             logger.info(f"LoRA training completed successfully for {person_id}")
 
         except Exception as e:
