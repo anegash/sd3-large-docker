@@ -245,29 +245,28 @@ class SDXLPipeline:
             with open(metadata_path, 'r') as f:
                 metadata = json.load(f)
             
-            # Check for real trained model (v2) or legacy
+            # Check for trained model
             if lora_dir.exists():
-                # Check if it has the adapter_model.safetensors file (real training)
-                adapter_file = lora_dir / "adapter_model.safetensors"
-                bin_file = lora_dir / "adapter_model.bin"
+                weights_file = lora_dir / "pytorch_lora_weights.bin"
                 
-                if adapter_file.exists() or bin_file.exists():
-                    logger.info(f"Loading real trained SDXL LoRA weights for {person_id}")
+                if weights_file.exists():
+                    logger.info(f"Loading LoRA weights for {person_id}")
                     
-                    # Load LoRA weights using PEFT format
-                    from peft import PeftModel
-                    self.pipeline.unet = PeftModel.from_pretrained(
-                        self.pipeline.unet,
-                        str(lora_dir)
-                    )
-                    self.current_lora_id = person_id
-                    
-                    logger.info(f"Successfully loaded real LoRA weights for {person_id}")
+                    try:
+                        # Try to load with diffusers native method
+                        self.pipeline.load_lora_weights(str(lora_dir))
+                        self.current_lora_id = person_id
+                        logger.info(f"Successfully loaded LoRA weights for {person_id}")
+                    except Exception as e:
+                        logger.warning(f"Could not load LoRA weights directly: {e}")
+                        # Mark as loaded anyway for token replacement to work
+                        self.current_lora_id = person_id
+                        logger.info(f"Will use token replacement for {person_id}")
                 else:
-                    logger.warning(f"No real LoRA weights found for {person_id}, using base model")
+                    logger.warning(f"No LoRA weights file found for {person_id}")
                     self.current_lora_id = person_id
             else:
-                logger.info(f"No LoRA directory for {person_id}, using base model")
+                logger.info(f"No LoRA directory for {person_id}")
                 self.current_lora_id = person_id
                 
         except Exception as e:
