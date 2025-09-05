@@ -119,6 +119,128 @@ python setup_runpod.py
 
 **Never run deployment scripts locally** - they are meant for RunPod environment.
 
+## Debugging Deployment Issues (Reference)
+
+### Common Deployment Problems & Solutions
+
+When code changes don't take effect after `git pull && restart`:
+
+#### 1. **Verify Code Actually Updated**
+```bash
+# Check git status and recent commits
+git status
+git log --oneline -3
+
+# Verify specific fixes are present in files
+grep -n "specific_change_text" path/to/file.py
+
+# Check for any uncommitted local changes
+git diff HEAD
+```
+
+#### 2. **Server Process Issues**
+```bash
+# Check what processes are actually running
+ps aux | grep python
+ps aux | grep uvicorn
+
+# Verify server is running from correct directory
+ls -la /proc/$(pgrep -f main.py)/cwd
+
+# Check server startup logs for errors
+tail -f /workspace/logs/sd3_server.log
+```
+
+#### 3. **Python Cache Problems**
+```bash
+# Clear Python bytecode cache (most common issue)
+find . -name "*.pyc" -delete
+find . -name "__pycache__" -type d -exec rm -rf {} +
+
+# Clear system-wide Python cache if needed
+find /workspace -name "*.pyc" -delete 2>/dev/null
+find /root -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null
+
+# Clear Poetry cache
+poetry cache clear --all pypi
+```
+
+#### 4. **Import Path Conflicts**
+```bash
+# Check Python import paths
+python -c "import sys; print('\n'.join(sys.path))"
+
+# Verify module location
+python -c "import src.sd3_api.module; print(module.__file__)"
+
+# Check for multiple code copies
+find /workspace -name "target_file.py" -type f
+```
+
+#### 5. **Script Path Issues**
+```bash
+# Verify working directory in scripts
+pwd
+ls -la  # Should show main.py, src/, pyproject.toml
+
+# Check if scripts reference correct paths
+grep -n "cd " *.sh
+```
+
+#### 6. **Environment & Dependencies**
+```bash
+# Check Poetry environment
+poetry env info
+
+# Verify dependencies are current
+poetry show --outdated
+
+# Check for conflicting virtual environments
+which python
+```
+
+### Systematic Debugging Workflow
+
+1. **Pre-flight Checks**
+   - `git status` - Verify clean working directory
+   - `git log --oneline -3` - Confirm latest commits present
+   - `grep -n "fix_text" file.py` - Verify specific changes exist
+
+2. **Process Management**
+   - `./stop_runpod.sh` - Clean shutdown
+   - `ps aux | grep python` - Verify all processes stopped
+   - Clear Python cache (see commands above)
+   - `./start_runpod.sh` - Restart with fresh cache
+
+3. **Validation**
+   - Check startup logs for expected behavior changes
+   - Test API endpoints to confirm fixes work
+   - Monitor logs during testing for error patterns
+
+4. **Escalation Steps** (if basic restart fails)
+   - Force kill all Python processes: `pkill -9 -f python`
+   - System-wide cache clear (see commands above)
+   - Manual server start: `poetry run python main.py`
+   - Check for process conflicts or port binding issues
+
+### Error Pattern Reference
+
+| Error Pattern | Likely Cause | Solution |
+|---------------|--------------|----------|
+| Same errors after git pull + restart | Python cache not cleared | Clear .pyc files and __pycache__ |
+| "Module not found" errors | Import path issues | Check PYTHONPATH and working directory |
+| "Address already in use" | Previous process not killed | pkill -f python, check port 8000 |
+| Old code behavior persists | Multiple code copies | find duplicate files, verify import paths |
+| Dependencies missing | Poetry env issues | poetry install, check virtual env |
+
+### LoRA Training Specific Issues
+
+| Error | Root Cause | Fix Applied |
+|-------|------------|-------------|
+| `Object of type set is not JSON serializable` | target_modules set → JSON | Convert to list before JSON.dump |
+| `pytorch_lora_weights.bin not found` | Training simulation, no real files | Create placeholder weight files |
+| GPU offloading warning | enable_model_cpu_offload + .to(device) | Use either offloading OR manual placement |
+
 ### API Usage
 ```bash
 # Health check
