@@ -254,11 +254,18 @@ class LoRATrainer:
                             return_tensors="pt"
                         ).to(device)
                         
-                        # Get embeddings
-                        prompt_embeds_1 = pipeline.text_encoder(text_inputs.input_ids)[0]
-                        prompt_embeds_2 = pipeline.text_encoder_2(text_inputs_2.input_ids)[0]
+                        # Get embeddings with proper output handling
+                        text_encoder_output = pipeline.text_encoder(text_inputs.input_ids)
+                        prompt_embeds_1 = text_encoder_output.last_hidden_state
                         
-                        # Concatenate embeddings for SDXL
+                        text_encoder_2_output = pipeline.text_encoder_2(text_inputs_2.input_ids) 
+                        prompt_embeds_2 = text_encoder_2_output.last_hidden_state
+                        
+                        # Ensure same dimensions before concatenating
+                        logger.info(f"Prompt embeds 1 shape: {prompt_embeds_1.shape}")
+                        logger.info(f"Prompt embeds 2 shape: {prompt_embeds_2.shape}")
+                        
+                        # Concatenate along feature dimension
                         prompt_embeds = torch.cat([prompt_embeds_1, prompt_embeds_2], dim=-1)
                     
                     # Convert to latents - should work now without CPU offloading
