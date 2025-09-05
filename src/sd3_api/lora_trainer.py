@@ -117,113 +117,210 @@ class LoRATrainer:
         learning_rate: float = 1e-4,
     ) -> None:
         """
-        Simplified LoRA training that creates effective personalization weights.
+        Real LoRA training using actual gradient descent on the images.
         """
+        import torch
+        import torch.nn.functional as F
+        from torch.optim import AdamW
+        from torch.utils.data import Dataset, DataLoader
+        import torchvision.transforms as transforms
+        import json
+        import random
+        import numpy as np
+        
         try:
-            logger.info(f"Starting simplified LoRA training for {person_id} with {len(images)} images")
+            logger.info(f"Starting REAL LoRA training for {person_id} with {len(images)} images")
             
             # Create unique token for this person
             unique_token = f"sks {person_id}"
             
-            # Process images at SDXL resolution
-            import torch
-            import torchvision.transforms as transforms
-            
             device = pipeline.device
+            dtype = pipeline.unet.dtype if hasattr(pipeline.unet, 'dtype') else torch.float16
             
-            # Check if model uses float16
-            try:
-                dtype = pipeline.unet.dtype
-            except:
-                dtype = torch.float32
+            # Create training dataset
+            class PersonDataset(Dataset):
+                def __init__(self, images, prompts):
+                    self.images = images
+                    self.prompts = prompts
+                    self.transform = transforms.Compose([
+                        transforms.Resize((1024, 1024), interpolation=transforms.InterpolationMode.BILINEAR),
+                        transforms.ToTensor(),
+                        transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])
+                    ])
+                    
+                def __len__(self):
+                    return len(self.images) * 3  # Repeat each image 3x with different prompts
+                    
+                def __getitem__(self, idx):
+                    img_idx = idx % len(self.images)
+                    prompt_idx = idx % len(self.prompts)
+                    
+                    image = self.images[img_idx]
+                    if image.mode != "RGB":
+                        image = image.convert("RGB")
+                        
+                    pixel_values = self.transform(image)
+                    return {
+                        "pixel_values": pixel_values,
+                        "input_ids": self.prompts[prompt_idx]
+                    }
             
-            transform = transforms.Compose([
-                transforms.Resize((1024, 1024)),
-                transforms.ToTensor(),
-                transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])
-            ])
+            # Create training prompts for this person
+            training_prompts = [
+                f"a photo of {unique_token}",
+                f"a portrait of {unique_token}", 
+                f"{unique_token} person",
+                f"a picture of {unique_token}",
+                f"{unique_token} looking at camera",
+                f"a headshot of {unique_token}",
+                f"{unique_token} smiling",
+                f"professional photo of {unique_token}"
+            ]
             
-            # Process all images
-            processed_images = []
-            for i, image in enumerate(images):
-                if image.mode != "RGB":
-                    image = image.convert("RGB")
-                img_tensor = transform(image).unsqueeze(0)
-                processed_images.append(img_tensor)
+            # Create dataset and dataloader
+            dataset = PersonDataset(images, training_prompts)
+            dataloader = DataLoader(dataset, batch_size=1, shuffle=True)
+            
+            logger.info(f"Created dataset with {len(dataset)} training samples")
+            
+            # Add LoRA layers to UNet
+            from peft import LoraConfig, get_peft_model, TaskType
+            
+            lora_config = LoraConfig(
+                r=16,  # Lower rank for stability
+                lora_alpha=16,
+                target_modules=["to_k", "to_q", "to_v", "to_out.0"],
+                lora_dropout=0.0,
+                bias="none",
+                task_type="FEATURE_EXTRACTION"
+            )
+            
+            # Apply LoRA to UNet
+            pipeline.unet = get_peft_model(pipeline.unet, lora_config)
+            pipeline.unet.train()
+            
+            # Setup optimizer - only train LoRA parameters
+            lora_params = [p for p in pipeline.unet.parameters() if p.requires_grad]
+            optimizer = AdamW(lora_params, lr=learning_rate, weight_decay=0.01)
+            
+            logger.info(f"Training {len(lora_params)} LoRA parameters")
+            
+            # Training loop
+            num_epochs = min(num_train_epochs, 20)  # Limit epochs for reasonable time
+            global_step = 0
+            
+            for epoch in range(num_epochs):
+                epoch_loss = 0.0
+                num_batches = 0
                 
-                if (i + 1) % 5 == 0:
-                    logger.info(f"Processed {i + 1}/{len(images)} images")
+                for batch in dataloader:
+                    # Get pixel values
+                    pixel_values = batch["pixel_values"].to(device, dtype=dtype)
+                    prompt = batch["input_ids"][0] if isinstance(batch["input_ids"], list) else training_prompts[0]
+                    
+                    # Encode text prompt
+                    text_input = pipeline.tokenizer(
+                        prompt,
+                        padding="max_length", 
+                        max_length=77,
+                        truncation=True,
+                        return_tensors="pt"
+                    ).to(device)
+                    
+                    text_input_2 = pipeline.tokenizer_2(
+                        prompt,
+                        padding="max_length",
+                        max_length=77, 
+                        truncation=True,
+                        return_tensors="pt"
+                    ).to(device)
+                    
+                    # Get text embeddings
+                    with torch.no_grad():
+                        prompt_embeds = pipeline.text_encoder(text_input.input_ids)[0]
+                        prompt_embeds_2 = pipeline.text_encoder_2(text_input_2.input_ids)[0]
+                        prompt_embeds = torch.cat([prompt_embeds, prompt_embeds_2], dim=-1)
+                    
+                    # Convert to latents
+                    with torch.no_grad():
+                        latents = pipeline.vae.encode(pixel_values).latent_dist.sample()
+                        latents = latents * pipeline.vae.config.scaling_factor
+                    
+                    # Sample random timestep
+                    timesteps = torch.randint(
+                        0, pipeline.scheduler.config.num_train_timesteps, 
+                        (latents.shape[0],), device=device
+                    ).long()
+                    
+                    # Add noise
+                    noise = torch.randn_like(latents)
+                    noisy_latents = pipeline.scheduler.add_noise(latents, noise, timesteps)
+                    
+                    # Predict noise
+                    model_pred = pipeline.unet(
+                        noisy_latents,
+                        timesteps,
+                        encoder_hidden_states=prompt_embeds
+                    ).sample
+                    
+                    # Calculate loss
+                    loss = F.mse_loss(model_pred, noise)
+                    
+                    # Backward pass
+                    optimizer.zero_grad()
+                    loss.backward()
+                    optimizer.step()
+                    
+                    epoch_loss += loss.item()
+                    num_batches += 1
+                    global_step += 1
+                
+                avg_loss = epoch_loss / num_batches if num_batches > 0 else 0
+                logger.info(f"Epoch {epoch + 1}/{num_epochs} - Average Loss: {avg_loss:.6f}")
+                
+                if (epoch + 1) % 5 == 0:
+                    logger.info(f"Training progress: {int((epoch + 1) / num_epochs * 100)}%")
             
-            # Create LoRA save directory
+            logger.info("LoRA training completed! Saving weights...")
+            
+            # Save LoRA weights
             lora_save_dir = self.lora_weights_dir / person_id
             lora_save_dir.mkdir(parents=True, exist_ok=True)
             
-            # Instead of real training, we'll create a configuration that tells
-            # the pipeline to focus on the unique token
-            import json
-            import time
+            # Save the trained LoRA model
+            pipeline.unet.save_pretrained(lora_save_dir)
             
-            # Simulate training with progress
-            total_steps = min(30, num_train_epochs)
-            for step in range(total_steps):
-                progress = (step + 1) / total_steps
-                loss = 0.8 * (1 - progress) + 0.1
-                logger.info(f"Training step {step + 1}/{total_steps} - Loss: {loss:.4f}")
-                time.sleep(0.5)  # Brief pause to simulate computation
-                
-                if (step + 1) % 10 == 0:
-                    logger.info(f"Progress: {int(progress * 100)}% complete")
-            
-            # Create LoRA weights that embed the unique token association
-            # This is a simplified approach that creates weights optimized for the token
-            lora_weights = {
-                "unet": {
-                    "down_blocks.0.attentions.0.transformer_blocks.0.attn1.to_k.lora_A.weight": torch.randn(32, 320, dtype=dtype) * 0.01,
-                    "down_blocks.0.attentions.0.transformer_blocks.0.attn1.to_k.lora_B.weight": torch.randn(320, 32, dtype=dtype) * 0.01,
-                    "down_blocks.0.attentions.0.transformer_blocks.0.attn1.to_q.lora_A.weight": torch.randn(32, 320, dtype=dtype) * 0.01,
-                    "down_blocks.0.attentions.0.transformer_blocks.0.attn1.to_q.lora_B.weight": torch.randn(320, 32, dtype=dtype) * 0.01,
-                    "down_blocks.0.attentions.0.transformer_blocks.0.attn1.to_v.lora_A.weight": torch.randn(32, 320, dtype=dtype) * 0.01,
-                    "down_blocks.0.attentions.0.transformer_blocks.0.attn1.to_v.lora_B.weight": torch.randn(320, 32, dtype=dtype) * 0.01,
-                }
-            }
-            
-            # Save LoRA weights in diffusers format
-            torch.save(lora_weights, lora_save_dir / "pytorch_lora_weights.bin")
-            
-            # Save adapter config for compatibility
-            adapter_config = {
-                "base_model_name_or_path": "stabilityai/stable-diffusion-xl-base-1.0",
-                "lora_alpha": 32,
-                "lora_dropout": 0.0,
-                "r": 32,
-                "target_modules": ["to_k", "to_q", "to_v"],
-                "task_type": "FEATURE_EXTRACTION",
-            }
-            
-            with open(lora_save_dir / "adapter_config.json", "w") as f:
-                json.dump(adapter_config, f, indent=2)
-            
-            # Save training info with unique token
+            # Save training metadata
             training_info = {
-                "model_version": "sdxl-lora-simplified",
-                "base_model": "stabilityai/stable-diffusion-xl-base-1.0",
+                "model_version": "sdxl-lora-real-v3",
+                "base_model": "stabilityai/stable-diffusion-xl-base-1.0", 
                 "unique_token": unique_token,
                 "num_images": len(images),
-                "training_steps": total_steps,
+                "num_training_samples": len(dataset),
+                "training_epochs": num_epochs,
                 "learning_rate": learning_rate,
-                "lora_rank": 32,
+                "lora_rank": lora_config.r,
+                "target_modules": lora_config.target_modules,
+                "global_steps": global_step
             }
             
             with open(lora_save_dir / "training_info.json", "w") as f:
                 json.dump(training_info, f, indent=2)
             
-            # Save metadata
+            # Save training metadata
             self._save_training_metadata(
-                person_id, len(images), total_steps, learning_rate
+                person_id, len(images), num_epochs, learning_rate
             )
             
-            logger.info(f"Simplified LoRA training completed for {person_id}")
-            logger.info(f"Use token '{unique_token}' in prompts for personalization")
+            logger.info(f"Real LoRA training completed for {person_id}!")
+            logger.info(f"Trained for {global_step} steps across {num_epochs} epochs")
+            logger.info(f"Use token '{unique_token}' in prompts for best results")
+            
+        except Exception as e:
+            logger.error(f"Real LoRA training failed: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            raise
 
         except Exception as e:
             logger.error(f"LoRA training failed for {person_id}: {e}")

@@ -247,24 +247,48 @@ class SDXLPipeline:
             
             # Check for trained model
             if lora_dir.exists():
-                weights_file = lora_dir / "pytorch_lora_weights.bin"
+                # Check for PEFT adapter files
+                adapter_config = lora_dir / "adapter_config.json"
+                adapter_model = lora_dir / "adapter_model.safetensors"
                 
-                if weights_file.exists():
-                    logger.info(f"Loading LoRA weights for {person_id}")
+                if adapter_config.exists() and adapter_model.exists():
+                    logger.info(f"Loading PEFT LoRA adapter for {person_id}")
                     
                     try:
-                        # Try to load with diffusers native method
-                        self.pipeline.load_lora_weights(str(lora_dir))
+                        # Load PEFT model
+                        from peft import PeftModel
+                        self.pipeline.unet = PeftModel.from_pretrained(
+                            self.pipeline.unet,
+                            str(lora_dir)
+                        )
                         self.current_lora_id = person_id
-                        logger.info(f"Successfully loaded LoRA weights for {person_id}")
+                        logger.info(f"Successfully loaded PEFT LoRA for {person_id}")
                     except Exception as e:
-                        logger.warning(f"Could not load LoRA weights directly: {e}")
-                        # Mark as loaded anyway for token replacement to work
-                        self.current_lora_id = person_id
-                        logger.info(f"Will use token replacement for {person_id}")
+                        logger.error(f"Failed to load PEFT model: {e}")
+                        # Try fallback diffusers loading
+                        try:
+                            self.pipeline.load_lora_weights(str(lora_dir))
+                            self.current_lora_id = person_id
+                            logger.info(f"Loaded via diffusers fallback for {person_id}")
+                        except Exception as e2:
+                            logger.warning(f"All loading methods failed: {e2}")
+                            self.current_lora_id = person_id
+                            logger.info(f"Using token-only mode for {person_id}")
                 else:
-                    logger.warning(f"No LoRA weights file found for {person_id}")
-                    self.current_lora_id = person_id
+                    # Try legacy pytorch_lora_weights.bin format
+                    weights_file = lora_dir / "pytorch_lora_weights.bin"
+                    if weights_file.exists():
+                        logger.info(f"Loading legacy LoRA weights for {person_id}")
+                        try:
+                            self.pipeline.load_lora_weights(str(lora_dir))
+                            self.current_lora_id = person_id
+                            logger.info(f"Loaded legacy weights for {person_id}")
+                        except Exception as e:
+                            logger.warning(f"Legacy loading failed: {e}")
+                            self.current_lora_id = person_id
+                    else:
+                        logger.info(f"No LoRA weights found for {person_id}, using token only")
+                        self.current_lora_id = person_id
             else:
                 logger.info(f"No LoRA directory for {person_id}")
                 self.current_lora_id = person_id
