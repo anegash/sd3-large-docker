@@ -233,33 +233,38 @@ class LoRATrainer:
             
             logger.info(f"Created dataset with {len(dataset)} training samples")
             
-            # Try using diffusers native LoRA support instead of PEFT
-            try:
-                # Use diffusers' built-in LoRA functionality 
-                from diffusers.loaders import LoraLoaderMixin
-                logger.info("Attempting to use diffusers native LoRA support...")
-                
-                # Set UNet to training mode without PEFT wrapper
-                pipeline.unet.train()
-                
-                # We'll implement a simplified training loop without PEFT for now
-                # This avoids the parameter forwarding conflicts entirely
-                use_peft_lora = False
-                logger.info("Using simplified training without PEFT wrapper")
-                
-            except Exception as e:
-                logger.warning(f"Diffusers LoRA approach failed: {e}")
-                logger.info("Falling back to simulation-based training")
-                use_peft_lora = False
+            # Freeze most UNet layers and only train attention layers for personalization
+            logger.info("Setting up selective layer training for personalization...")
             
-            # Setup optimizer - only train LoRA parameters
-            lora_params = [p for p in pipeline.unet.parameters() if p.requires_grad]
-            optimizer = AdamW(lora_params, lr=learning_rate, weight_decay=0.01)
+            # Freeze all parameters first
+            for param in pipeline.unet.parameters():
+                param.requires_grad = False
+                
+            # Only unfreeze attention layers for personalization training
+            trainable_params = []
+            for name, module in pipeline.unet.named_modules():
+                if any(layer_name in name for layer_name in [
+                    'attn1.to_q', 'attn1.to_k', 'attn1.to_v', 'attn1.to_out',  # Self attention
+                    'attn2.to_q', 'attn2.to_k', 'attn2.to_v', 'attn2.to_out',  # Cross attention  
+                    'ff.net.0', 'ff.net.2'  # Feed forward layers
+                ]):
+                    for param in module.parameters():
+                        param.requires_grad = True
+                        trainable_params.append(param)
+                        
+            logger.info(f"Unfroze {len(trainable_params)} parameters in attention layers")
             
-            logger.info(f"Training {len(lora_params)} LoRA parameters")
+            # Set UNet to training mode
+            pipeline.unet.train()
+            use_peft_lora = False
             
-            # Training loop
-            num_epochs = min(num_train_epochs, 20)  # Limit epochs for reasonable time
+            # Setup optimizer - only train unfrozen parameters
+            optimizer = AdamW(trainable_params, lr=learning_rate, weight_decay=0.01)
+            
+            logger.info(f"Training {len(trainable_params)} attention layer parameters")
+            
+            # Training loop - more epochs since we're only training attention layers
+            num_epochs = min(num_train_epochs, 50)  # More training for better personalization
             global_step = 0
             
             for epoch in range(num_epochs):
@@ -333,15 +338,16 @@ class LoRATrainer:
             
             # Save training metadata
             training_info = {
-                "model_version": "sdxl-lora-real-v3",
+                "model_version": "sdxl-attention-training-v1",
                 "base_model": "stabilityai/stable-diffusion-xl-base-1.0", 
                 "unique_token": unique_token,
                 "num_images": len(images),
                 "num_training_samples": len(dataset),
                 "training_epochs": num_epochs,
                 "learning_rate": learning_rate,
-                "lora_rank": 8,  # Fixed since we're not using PEFT
-                "target_modules": ["direct_unet_training"],  # Indicate direct training
+                "trainable_params": len(trainable_params),
+                "target_modules": ["attention_layers", "feed_forward"],  # Attention-focused training
+                "training_method": "selective_attention_fine_tuning",
                 "global_steps": global_step
             }
             
