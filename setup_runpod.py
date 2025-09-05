@@ -29,9 +29,21 @@ def setup_workspace():
     for dir_path in workspace_dirs:
         Path(dir_path).mkdir(parents=True, exist_ok=True)
     
-    if not Path("/workspace/sd3-large-docker/pyproject.toml").exists():
-        print("❌ Project not found at /workspace/sd3-large-docker")
+    # Auto-detect project directory
+    project_dirs = ["/workspace/sdxl-api", "/workspace/sd3-large-docker"]
+    project_dir = None
+    
+    for dir_path in project_dirs:
+        if Path(f"{dir_path}/pyproject.toml").exists():
+            project_dir = dir_path
+            print(f"✅ Found project at {project_dir}")
+            break
+    
+    if not project_dir:
+        print("❌ Project not found in expected locations")
         return False
+    
+    os.environ["PROJECT_DIR"] = project_dir
     return True
 
 def install_dependencies():
@@ -41,7 +53,8 @@ def install_dependencies():
     run_command("curl -sSL https://install.python-poetry.org | python3 -", "Installing Poetry")
     
     os.environ["PATH"] = f"/root/.local/bin:{os.environ.get('PATH', '')}"
-    os.chdir("/workspace/sd3-large-docker")
+    project_dir = os.environ.get("PROJECT_DIR", "/workspace/sdxl-api")
+    os.chdir(project_dir)
     
     run_command("poetry config virtualenvs.path /workspace/venv", "Configuring Poetry")
     run_command("poetry install --only main", "Installing Python dependencies")
@@ -55,7 +68,8 @@ def setup_huggingface_auth():
         print("⚠️  Set HF_TOKEN in RunPod environment variables")
         return False
     
-    env_path = Path("/workspace/sd3-large-docker/.env")
+    project_dir = os.environ.get("PROJECT_DIR", "/workspace/sdxl-api")
+    env_path = Path(f"{project_dir}/.env")
     with open(env_path, "w") as f:
         f.write(f"HUGGINGFACE_TOKEN={hf_token}\n")
         f.write(f"HF_HOME=/workspace/huggingface_cache\n")
@@ -67,10 +81,13 @@ def create_startup_script():
     script = """#!/bin/bash
 export HF_HOME=/workspace/huggingface_cache
 export PATH="/root/.local/bin:$PATH"
-cd /workspace/sd3-large-docker
+cd ${PROJECT_DIR:-/workspace/sdxl-api}
 [ -f .env ] && export $(cat .env | xargs)
 poetry run python main.py
 """
+    
+    project_dir = os.environ.get("PROJECT_DIR", "/workspace/sdxl-api")
+    script = script.replace("${PROJECT_DIR:-/workspace/sdxl-api}", project_dir)
     
     with open("/workspace/start_sdxl.sh", "w") as f:
         f.write(script)

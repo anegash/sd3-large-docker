@@ -29,12 +29,12 @@ Successfully deployed SD3.5 Large API with LoRA (Low-Rank Adaptation) training f
 
 ```
 /workspace/
-├── sd3-large-docker/         # Project code (git repo)
+├── sdxl-api/                 # Project code (git repo)
 ├── huggingface_cache/        # SD3.5 model cache (~8GB)
 ├── lora_weights/             # Trained LoRA weights per person
 ├── logs/                     # Server logs and PID files
-├── start_sd3.sh             # Background server startup
-└── stop_sd3.sh              # Server stop script
+├── start_sdxl.sh             # Background server startup
+└── stop_sdxl.sh              # Server stop script
 ```
 
 ## 📋 RunPod Setup Commands
@@ -42,17 +42,17 @@ Successfully deployed SD3.5 Large API with LoRA (Low-Rank Adaptation) training f
 ### Initial Deployment:
 ```bash
 # Clone the repository  
-git clone https://github.com/anegash/sd3-large-docker.git /workspace/sd3-large-docker
+git clone https://github.com/anegash/sd3-large-docker.git /workspace/sdxl-api
 
 # One-time comprehensive setup
-cd /workspace/sd3-large-docker
+cd /workspace/sdxl-api
 python3 setup_runpod.py  # Uses HF_TOKEN from RunPod environment
 ```
 
 ### After Pod Restart:
 ```bash
 # Start server
-cd /workspace/sd3-large-docker
+cd /workspace/sdxl-api
 ./start_runpod.sh
 ```
 

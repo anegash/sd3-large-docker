@@ -45,8 +45,8 @@ For persistent LoRA training with storage that survives pod restarts:
 1. **Create RunPod Pod**: Launch a pod with persistent storage (recommended: 50GB+ network volume)
 2. **Clone Repository**: 
    ```bash
-   git clone https://github.com/yourusername/sd3-large-docker.git
-   cd sd3-large-docker
+   git clone https://github.com/yourusername/sd3-large-docker.git /workspace/sdxl-api
+   cd /workspace/sdxl-api
    ```
 
 3. **Run Setup Script**: 

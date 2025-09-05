@@ -3,8 +3,8 @@
 ## Quick Commands to Run on RunPod
 
 ```bash
-# 1. Update code and fix deployment
-cd /workspace/sdxl-api  # or wherever your code is
+# 1. Update code and fix deployment  
+cd /workspace/sdxl-api  # Main project directory
 git pull
 chmod +x fix_directory_references.sh
 ./fix_directory_references.sh
