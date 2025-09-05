@@ -15,9 +15,17 @@ if [ -f "$PID_FILE" ]; then
     fi
     rm -f $PID_FILE
 else
-    # Kill any remaining processes
-    PIDS=$(pgrep -f "python main.py")
-    [ ! -z "$PIDS" ] && echo "$PIDS" | xargs kill
+    # Kill any remaining processes more thoroughly
+    echo "🔍 Searching for running Python processes..."
+    PIDS=$(pgrep -f "python.*main.py\|uvicorn.*api:app")
+    if [ ! -z "$PIDS" ]; then
+        echo "Found PIDs: $PIDS"
+        echo "$PIDS" | xargs kill
+        sleep 2
+        # Force kill if still running
+        PIDS=$(pgrep -f "python.*main.py\|uvicorn.*api:app")
+        [ ! -z "$PIDS" ] && echo "$PIDS" | xargs kill -9
+    fi
 fi
 
 echo "🏁 Done"

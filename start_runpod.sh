@@ -14,14 +14,35 @@ if ! command -v poetry &> /dev/null; then
     curl -sSL https://install.python-poetry.org | python3 -
 fi
 
-# Change to project directory
-cd /workspace/sd3-large-docker
+# Change to project directory (adapt to your actual path)
+if [ -d "/workspace/sd3-large-docker" ]; then
+    cd /workspace/sd3-large-docker
+elif [ -d "/workspace/sdxl-api" ]; then
+    cd /workspace/sdxl-api  
+elif [ -d "/workspace" ] && [ -f "/workspace/main.py" ]; then
+    cd /workspace
+else
+    echo "❌ Cannot find project directory. Current dir: $(pwd)"
+    ls -la /workspace/
+    exit 1
+fi
 
 # Load environment
 [ -f .env ] && export $(cat .env | grep -v '^#' | xargs)
 
-# Install dependencies
-poetry install --only main
+# Clear Python cache to ensure new code loads
+echo "🧹 Clearing Python cache..."
+find . -name "*.pyc" -delete 2>/dev/null || true
+find . -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
+
+# Install dependencies (skip if already installed)
+if [ ! -f ".poetry_installed" ]; then
+    echo "📦 Installing dependencies..."
+    poetry install --only main
+    touch .poetry_installed
+else
+    echo "✅ Dependencies already installed"
+fi
 
 # Create logs directory
 mkdir -p /workspace/logs
