@@ -337,18 +337,29 @@ class LoRATrainer:
                     noise = torch.randn_like(latents)
                     noisy_latents = pipeline.scheduler.add_noise(latents, noise, timesteps)
                     
-                    # Call UNet without PEFT complications
+                    # Call UNet with SDXL-specific conditioning parameters
                     if use_peft_lora:
                         # This path would use PEFT but we're avoiding it for now
                         logger.error("PEFT path should not be used")
                         raise RuntimeError("PEFT path disabled due to parameter conflicts")
                     else:
-                        # Direct UNet call without PEFT wrapper
-                        logger.info("Calling UNet directly without PEFT")
+                        # Direct UNet call without PEFT wrapper - add SDXL conditioning
+                        logger.info("Calling SDXL UNet with proper conditioning")
+                        
+                        # SDXL requires additional conditioning parameters
+                        # Create dummy text embeds for SDXL (since we already have encoder_hidden_states)
+                        batch_size = noisy_latents.shape[0]
+                        pooled_prompt_embeds = torch.zeros((batch_size, 1280), device=device, dtype=dtype)
+                        
+                        # SDXL UNet call with added_cond_kwargs
                         model_pred = pipeline.unet(
                             sample=noisy_latents,
                             timestep=timesteps,
                             encoder_hidden_states=prompt_embeds,
+                            added_cond_kwargs={
+                                "text_embeds": pooled_prompt_embeds,
+                                "time_ids": torch.zeros((batch_size, 6), device=device, dtype=dtype)
+                            },
                             return_dict=False
                         )[0]
                     
