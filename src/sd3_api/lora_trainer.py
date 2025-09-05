@@ -149,6 +149,7 @@ class LoRATrainer:
             )
 
             device = pipeline.device
+            dtype = pipeline.unet.dtype  # Get the dtype from the model (float16 or float32)
             
             # Configure LoRA for UNet only (most effective for personalization)
             lora_config = LoraConfig(
@@ -186,7 +187,7 @@ class LoRATrainer:
                 for j in range(2):  # Use each image with 2 different prompts
                     prompt_idx = (i * 2 + j) % len(training_prompts)
                     processed_data.append({
-                        "image": transform(image).unsqueeze(0).to(device),
+                        "image": transform(image).unsqueeze(0).to(device, dtype=dtype),
                         "prompt": training_prompts[prompt_idx]
                     })
 
@@ -237,11 +238,11 @@ class LoRATrainer:
                         ], dim=-1)
                         
                         # Add noise to image
-                        noise = torch.randn_like(data["image"])
+                        noise = torch.randn_like(data["image"], dtype=dtype)
                         timesteps = torch.randint(
                             0, pipeline.scheduler.config.num_train_timesteps,
-                            (1,), device=device
-                        ).long()
+                            (1,), device=device, dtype=torch.long
+                        )
                         
                         # Forward diffusion process
                         noisy_images = pipeline.scheduler.add_noise(
