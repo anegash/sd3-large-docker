@@ -108,6 +108,39 @@ class LoRATrainer:
             person_id, images, pipeline, num_train_epochs, learning_rate
         )
 
+    def _encode_prompt_safely(self, prompt: str, pipeline, device) -> torch.Tensor:
+        """Encode prompt in isolated scope to avoid parameter conflicts."""
+        with torch.no_grad():
+            # Tokenize text
+            text_inputs = pipeline.tokenizer(
+                prompt,
+                padding="max_length",
+                max_length=77,
+                truncation=True,
+                return_tensors="pt"
+            ).to(device)
+            
+            text_inputs_2 = pipeline.tokenizer_2(
+                prompt,
+                padding="max_length", 
+                max_length=77,
+                truncation=True,
+                return_tensors="pt"
+            ).to(device)
+            
+            # Get embeddings with proper output handling
+            text_encoder_output = pipeline.text_encoder(text_inputs.input_ids)
+            prompt_embeds_1 = text_encoder_output.last_hidden_state
+            
+            text_encoder_2_output = pipeline.text_encoder_2(text_inputs_2.input_ids) 
+            prompt_embeds_2 = text_encoder_2_output.last_hidden_state
+            
+            # Concatenate along feature dimension
+            prompt_embeds = torch.cat([prompt_embeds_1, prompt_embeds_2], dim=-1)
+            
+            # Return the embeddings - all local variables will be cleaned up automatically
+            return prompt_embeds.clone()  # Clone to ensure no references remain
+
     def _train_with_images(
         self,
         person_id: str,
@@ -235,43 +268,8 @@ class LoRATrainer:
                     pixel_values = batch["pixel_values"].to(device, dtype=dtype)
                     prompt = batch["prompt"][0] if isinstance(batch["prompt"], list) else batch["prompt"]
                     
-                    # Encode text prompt manually to avoid parameter conflicts
-                    with torch.no_grad():
-                        # Tokenize text
-                        text_inputs = pipeline.tokenizer(
-                            prompt,
-                            padding="max_length",
-                            max_length=77,
-                            truncation=True,
-                            return_tensors="pt"
-                        ).to(device)
-                        
-                        text_inputs_2 = pipeline.tokenizer_2(
-                            prompt,
-                            padding="max_length", 
-                            max_length=77,
-                            truncation=True,
-                            return_tensors="pt"
-                        ).to(device)
-                        
-                        # Get embeddings with proper output handling
-                        text_encoder_output = pipeline.text_encoder(text_inputs.input_ids)
-                        prompt_embeds_1 = text_encoder_output.last_hidden_state
-                        
-                        text_encoder_2_output = pipeline.text_encoder_2(text_inputs_2.input_ids) 
-                        prompt_embeds_2 = text_encoder_2_output.last_hidden_state
-                        
-                        # Ensure same dimensions before concatenating
-                        logger.info(f"Prompt embeds 1 shape: {prompt_embeds_1.shape}")
-                        logger.info(f"Prompt embeds 2 shape: {prompt_embeds_2.shape}")
-                        
-                        # Concatenate along feature dimension
-                        prompt_embeds = torch.cat([prompt_embeds_1, prompt_embeds_2], dim=-1)
-                    
-                    # Clean up variables to avoid PEFT parameter conflicts
-                    del text_inputs, text_inputs_2, text_encoder_output, text_encoder_2_output
-                    del prompt_embeds_1, prompt_embeds_2
-                    torch.cuda.empty_cache()  # Clear GPU memory
+                    # Use separate function to encode prompt and avoid variable scope issues
+                    prompt_embeds = self._encode_prompt_safely(prompt, pipeline, device)
                     
                     # Convert to latents - should work now without CPU offloading
                     with torch.no_grad():
@@ -288,14 +286,21 @@ class LoRATrainer:
                     noise = torch.randn_like(latents)
                     noisy_latents = pipeline.scheduler.add_noise(latents, noise, timesteps)
                     
-                    # Predict noise with explicit parameters only
-                    # Use forward method explicitly to avoid parameter conflicts
-                    model_pred = pipeline.unet.forward(
-                        sample=noisy_latents,
-                        timestep=timesteps,
-                        encoder_hidden_states=prompt_embeds,
-                        return_dict=False
-                    )[0]
+                    # Predict noise with very explicit parameter handling
+                    # Create a clean parameter dict to avoid any variable pollution
+                    unet_kwargs = {
+                        'sample': noisy_latents,
+                        'timestep': timesteps, 
+                        'encoder_hidden_states': prompt_embeds,
+                        'return_dict': False
+                    }
+                    
+                    # Force garbage collection to clear any lingering variables
+                    import gc
+                    gc.collect()
+                    
+                    # Call UNet with explicit parameters only
+                    model_pred = pipeline.unet(**unet_kwargs)[0]
                     
                     # Calculate loss
                     loss = F.mse_loss(model_pred, noise)
