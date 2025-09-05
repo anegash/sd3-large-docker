@@ -162,7 +162,7 @@ class LoRATrainer:
                     pixel_values = self.transform(image)
                     return {
                         "pixel_values": pixel_values,
-                        "input_ids": self.prompts[prompt_idx]
+                        "prompt": self.prompts[prompt_idx]
                     }
             
             # Create training prompts for this person
@@ -214,32 +214,25 @@ class LoRATrainer:
                 num_batches = 0
                 
                 for batch in dataloader:
-                    # Get pixel values
+                    # Get pixel values and prompt
                     pixel_values = batch["pixel_values"].to(device, dtype=dtype)
-                    prompt = batch["input_ids"][0] if isinstance(batch["input_ids"], list) else training_prompts[0]
+                    prompt = batch["prompt"][0] if isinstance(batch["prompt"], list) else batch["prompt"]
                     
-                    # Encode text prompt
-                    text_input = pipeline.tokenizer(
-                        prompt,
-                        padding="max_length", 
-                        max_length=77,
-                        truncation=True,
-                        return_tensors="pt"
-                    ).to(device)
-                    
-                    text_input_2 = pipeline.tokenizer_2(
-                        prompt,
-                        padding="max_length",
-                        max_length=77, 
-                        truncation=True,
-                        return_tensors="pt"
-                    ).to(device)
-                    
-                    # Get text embeddings
+                    # Encode text prompt using pipeline's method
                     with torch.no_grad():
-                        prompt_embeds = pipeline.text_encoder(text_input.input_ids)[0]
-                        prompt_embeds_2 = pipeline.text_encoder_2(text_input_2.input_ids)[0]
-                        prompt_embeds = torch.cat([prompt_embeds, prompt_embeds_2], dim=-1)
+                        (
+                            prompt_embeds,
+                            negative_prompt_embeds,
+                            pooled_prompt_embeds,
+                            negative_pooled_prompt_embeds,
+                        ) = pipeline.encode_prompt(
+                            prompt,
+                            device=device,
+                            num_images_per_prompt=1,
+                            do_classifier_free_guidance=False
+                        )
+                        # Use only the positive prompt embeddings
+                        prompt_embeds = prompt_embeds
                     
                     # Convert to latents
                     with torch.no_grad():
