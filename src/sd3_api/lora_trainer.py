@@ -137,20 +137,22 @@ class LoRATrainer:
             device = pipeline.device
             dtype = pipeline.unet.dtype if hasattr(pipeline.unet, 'dtype') else torch.float16
             
-            # Ensure all pipeline components are on the same device and dtype
-            logger.info(f"Moving pipeline to device: {device}, dtype: {dtype}")
+            # ROOT CAUSE FIX: Disable CPU offloading during training
+            logger.info(f"Disabling CPU offloading for training on device: {device}")
+            
+            # Disable CPU offloading that causes device conflicts during training
+            if hasattr(pipeline, '_cpu_offload_hooks'):
+                pipeline._cpu_offload_hooks.clear()
+                logger.info("Cleared CPU offload hooks")
+            
+            # Move everything to GPU and keep it there
+            logger.info(f"Moving all pipeline components to {device} with dtype {dtype}")
             pipeline.vae = pipeline.vae.to(device, dtype=dtype)
             pipeline.text_encoder = pipeline.text_encoder.to(device, dtype=dtype) 
             pipeline.text_encoder_2 = pipeline.text_encoder_2.to(device, dtype=dtype)
             pipeline.unet = pipeline.unet.to(device, dtype=dtype)
             
-            # Explicitly move VAE encoder and decoder to device
-            if hasattr(pipeline.vae, 'encoder'):
-                pipeline.vae.encoder = pipeline.vae.encoder.to(device, dtype=dtype)
-            if hasattr(pipeline.vae, 'decoder'):
-                pipeline.vae.decoder = pipeline.vae.decoder.to(device, dtype=dtype)
-            
-            logger.info(f"All components moved to {device}")
+            logger.info(f"All pipeline components moved to {device} for training")
             
             # Create training dataset
             class PersonDataset(Dataset):
@@ -249,13 +251,8 @@ class LoRATrainer:
                         # Use only the positive prompt embeddings
                         prompt_embeds = prompt_embeds
                     
-                    # Convert to latents with explicit device check
+                    # Convert to latents - should work now without CPU offloading
                     with torch.no_grad():
-                        # Double-check VAE is on correct device before encoding
-                        if pipeline.vae.device != device:
-                            logger.warning(f"VAE device mismatch: {pipeline.vae.device} vs {device}")
-                            pipeline.vae = pipeline.vae.to(device, dtype=dtype)
-                        
                         latents = pipeline.vae.encode(pixel_values).latent_dist.sample()
                         latents = latents * pipeline.vae.config.scaling_factor
                     
