@@ -137,6 +137,12 @@ class LoRATrainer:
             device = pipeline.device
             dtype = pipeline.unet.dtype if hasattr(pipeline.unet, 'dtype') else torch.float16
             
+            # Ensure all pipeline components are on the same device
+            pipeline.vae = pipeline.vae.to(device)
+            pipeline.text_encoder = pipeline.text_encoder.to(device) 
+            pipeline.text_encoder_2 = pipeline.text_encoder_2.to(device)
+            pipeline.unet = pipeline.unet.to(device)
+            
             # Create training dataset
             class PersonDataset(Dataset):
                 def __init__(self, images, prompts):
@@ -234,8 +240,10 @@ class LoRATrainer:
                         # Use only the positive prompt embeddings
                         prompt_embeds = prompt_embeds
                     
-                    # Convert to latents
+                    # Convert to latents - ensure VAE is on correct device
                     with torch.no_grad():
+                        # Make sure VAE is on the same device
+                        pipeline.vae = pipeline.vae.to(device)
                         latents = pipeline.vae.encode(pixel_values).latent_dist.sample()
                         latents = latents * pipeline.vae.config.scaling_factor
                     
