@@ -83,13 +83,16 @@ class SDXLPipeline:
             if hasattr(self.pipeline, 'enable_memory_efficient_attention'):
                 self.pipeline.enable_memory_efficient_attention()
             
-            # Use either CPU offloading OR manual GPU placement, not both
-            if hasattr(self.pipeline, 'enable_model_cpu_offload') and self.device != "cpu":
-                # Use automatic offloading for memory efficiency
-                self.pipeline.enable_model_cpu_offload()
-            else:
-                # Manual GPU placement when offloading not available or on CPU
-                self.pipeline.to(self.device)
+            # DISABLE CPU offloading completely - keep everything on GPU for training
+            # CPU offloading causes device mismatch errors during LoRA training
+            logger.info(f"Moving pipeline to {self.device} without CPU offloading")
+            self.pipeline.to(self.device)
+            
+            # Verify all components are on GPU
+            logger.info(f"UNet device: {self.pipeline.unet.device}")
+            logger.info(f"VAE device: {self.pipeline.vae.device}")
+            logger.info(f"Text encoder device: {self.pipeline.text_encoder.device}")
+            logger.info(f"Text encoder 2 device: {self.pipeline.text_encoder_2.device}")
             
             # Optionally load refiner (disabled for memory efficiency)
             if self.use_refiner and self.device != "cpu":
