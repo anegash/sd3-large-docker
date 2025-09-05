@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a professionally structured Docker-based Stable Diffusion 3.5 Large image generation API service. The project follows modern Python packaging standards with Poetry dependency management:
+This is a professionally structured Docker-based Stable Diffusion XL (SDXL) image generation API service with LoRA training capabilities. The project follows modern Python packaging standards with Poetry dependency management:
 
-- **src/sd3_api/**: Main package with modular architecture
+- **src/sd3_api/**: Main package with modular architecture (renamed for compatibility)
 - **main.py**: Entry point for the server
 - **pyproject.toml**: Poetry configuration with dependencies and dev tools
 - **poetry.lock**: Locked dependencies for reproducible builds
@@ -19,16 +19,18 @@ This is a professionally structured Docker-based Stable Diffusion 3.5 Large imag
 
 The application uses a modular FastAPI architecture:
 - **api.py**: FastAPI application and endpoint definitions
-- **pipeline.py**: SD3 pipeline management with device detection and HuggingFace auth
+- **pipeline.py**: SDXL pipeline management with device detection and LoRA support
 - **device.py**: Multi-platform device detection (CUDA/MPS/CPU)
-- **models.py**: Pydantic models for request/response validation
+- **models.py**: Pydantic models for request/response validation with width/height support
 - **config.py**: Configuration constants and settings
-- **Asynchronous model loading**: Downloads and loads SD3.5 Large in background at server startup
+- **lora_trainer.py**: LoRA training functionality for personalization
+- **Asynchronous model loading**: Downloads and loads SDXL models in background at server startup
 - **Real-time progress**: Health endpoint shows loading status with live updates
-- **HuggingFace authentication**: Automatic token handling for gated models
+- **HuggingFace authentication**: Automatic token handling (no special access required for SDXL)
 - **Multi-platform GPU support**: CUDA (NVIDIA) or MPS (Apple Silicon) with CPU fallback
-- **Model**: `stabilityai/stable-diffusion-3.5-large` with automatic precision handling
-- **RunPod integration**: Serverless deployment support via handler.py
+- **Models**: `stabilityai/stable-diffusion-xl-base-1.0` with optional refiner
+- **LoRA training**: Support for personalized image generation with custom training
+- **RunPod integration**: Optimized for RunPod GPU deployment
 
 ## Common Commands
 
@@ -37,7 +39,7 @@ The application uses a modular FastAPI architecture:
 # Automatic setup (recommended)
 ./setup_env.sh
 
-# Set up HuggingFace authentication for SD3.5 Large
+# Set up HuggingFace authentication for SDXL (optional, public models)
 poetry run python setup_huggingface.py
 
 # Manual setup
@@ -75,16 +77,16 @@ poetry run black src/ main.py && poetry run isort src/ main.py && poetry run fla
 ### Docker
 ```bash
 # Build the container (uses Poetry internally)
-docker build -t sd3-large-api .
+docker build -t sdxl-api .
 
-# Run with GPU (NVIDIA) - requires HuggingFace token as env var
-docker run --gpus all -e HUGGINGFACE_TOKEN=your_token -p 8000:8000 sd3-large-api
+# Run with GPU (NVIDIA) - HuggingFace token recommended but not required
+docker run --gpus all -e HUGGINGFACE_TOKEN=your_token -p 8000:8000 sdxl-api
 
 # Run with Apple Silicon MPS or CPU fallback
-docker run -e HUGGINGFACE_TOKEN=your_token -p 8000:8000 sd3-large-api
+docker run -e HUGGINGFACE_TOKEN=your_token -p 8000:8000 sdxl-api
 
-# Without token (will fail for SD3.5 Large)
-docker run -p 8000:8000 sd3-large-api
+# Without token (will work for SDXL as models are public)
+docker run -p 8000:8000 sdxl-api
 ```
 
 ### RunPod Deployment
@@ -108,13 +110,13 @@ python setup_runpod.py
 # Health check
 curl "http://localhost:8000/"
 
-# Generate image (GET)
-curl "http://localhost:8000/generate?prompt=a%20beautiful%20sunset&steps=20&guidance=7.5"
+# Generate image (GET) with dimensions
+curl "http://localhost:8000/generate?prompt=a%20beautiful%20sunset&steps=20&guidance=7.5&width=1024&height=1024"
 
-# Generate image (POST)
+# Generate image (POST) with LoRA
 curl -X POST "http://localhost:8000/generate" \
   -H "Content-Type: application/json" \
-  -d '{"prompt": "a beautiful sunset", "steps": 20, "guidance": 7.5}'
+  -d '{"prompt": "a portrait of person123", "steps": 25, "guidance": 7.5, "width": 768, "height": 1024, "person_id": "person123"}'
 ```
 
 ## Key Technical Details
@@ -125,14 +127,16 @@ curl -X POST "http://localhost:8000/generate" \
 - Different model variants loaded based on device capabilities
 
 ### API Features
-- **Asynchronous loading**: Model loads in background at server startup, not on first request
+- **Asynchronous loading**: SDXL model loads in background at server startup
 - **Loading progress**: Health endpoint shows real-time loading status
-- **HuggingFace auth**: Automatic token handling for gated models
-- **Comprehensive validation**: Pydantic request/response models with prompt, steps, guidance parameters
+- **HuggingFace auth**: Automatic token handling (SDXL models are public)
+- **Comprehensive validation**: Pydantic request/response models with prompt, steps, guidance, width, height
+- **LoRA support**: Train and use personalized models via `/train-lora` and `person_id` parameter
+- **Flexible dimensions**: Support for custom width/height (512-2048, divisible by 8)
 - **Proper error handling**: HTTP status codes with meaningful messages
 - **Dual endpoints**: Both GET and POST for `/generate`
 - **OpenAPI docs**: Available at `/docs` with interactive testing
-- **RunPod serverless**: Compatible with RunPod serverless deployment
+- **RunPod optimized**: Memory-efficient settings for GPU deployment
 
 ### Project Structure
 ```
@@ -142,7 +146,9 @@ src/sd3_api/
 ├── config.py            # Configuration settings
 ├── device.py            # Device detection utilities  
 ├── models.py            # Pydantic request/response models
-└── pipeline.py          # SD3 pipeline management
+├── pipeline.py          # SDXL pipeline management
+├── lora_trainer.py      # LoRA training functionality
+└── image_manager.py     # Image storage and management
 
 Setup & deployment files:
 ├── main.py              # FastAPI server entry point
@@ -158,21 +164,24 @@ Setup & deployment files:
 All configuration is centralized in `config.py` including model settings, API defaults, and server configuration. Device-specific optimizations are handled automatically.
 
 ### Authentication Requirements
-- **SD3.5 Large**: Requires HuggingFace account + token + model access approval
-- **Setup script**: `poetry run python setup_huggingface.py` guides through process
+- **SDXL Models**: Public models, no special access required
+- **Setup script**: `poetry run python setup_huggingface.py` for better download speeds
 - **Token storage**: Saved in `.env` file (gitignored) for local development
-- **Docker deployment**: Pass token via `HUGGINGFACE_TOKEN` environment variable
+- **Docker deployment**: Pass token via `HUGGINGFACE_TOKEN` environment variable (optional)
 
 ### Loading Process
 1. **Server startup**: FastAPI starts in ~3 seconds
-2. **Background loading**: Model downloads (~8GB) and loads asynchronously in background task
+2. **Background loading**: SDXL model downloads (~6.5GB) and loads asynchronously
 3. **Progress monitoring**: Check health endpoint for real-time status via `pipeline.status` property
 4. **Ready state**: API accepts generation requests once loading completes
 
 ### API Request/Response Format
-- **GenerateRequest**: `prompt` (required), `steps` (1-150, default 15), `guidance` (1.0-15.0, default 7.5)
+- **GenerateRequest**: `prompt` (required), `steps` (1-150, default 20), `guidance` (1.0-15.0, default 7.5), `width` (512-2048, default 1024), `height` (512-2048, default 1024), `person_id` (optional)
 - **GenerateResponse**: Base64-encoded PNG image
 - **HealthResponse**: Server status and device information
 - **ErrorResponse**: Error messages with appropriate HTTP status codes
 
-Note: The current API does not support `width`, `height`, or `seed` parameters.
+### LoRA Training API
+- **POST /train-lora**: Train personalized model with 5-20 images
+- **GET /lora**: List available trained models
+- **DELETE /lora/{person_id}**: Remove trained model

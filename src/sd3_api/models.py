@@ -5,11 +5,13 @@ from pydantic import BaseModel, Field
 
 
 class GenerateRequest(BaseModel):
-    """Request model for image generation."""
+    """Request model for SDXL image generation."""
     
     prompt: str = Field(..., description="Text prompt for image generation")
-    steps: int = Field(15, ge=1, le=150, description="Number of inference steps")
+    steps: int = Field(20, ge=1, le=150, description="Number of inference steps")
     guidance: float = Field(7.5, ge=1.0, le=15.0, description="Guidance scale")
+    width: int = Field(1024, ge=512, le=2048, description="Image width (must be divisible by 8)")
+    height: int = Field(1024, ge=512, le=2048, description="Image height (must be divisible by 8)")
     person_id: Optional[str] = Field(None, description="Person ID for LoRA weights")
 
 

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""HuggingFace Authentication Setup for SD3.5 Large"""
+"""HuggingFace Authentication Setup for SDXL"""
 
 import sys
 
 def setup_huggingface_auth():
-    print("🤗 HuggingFace Authentication Setup")
+    print("🤗 HuggingFace Authentication Setup for SDXL")
     print("1. Get account: https://huggingface.co/join")
-    print("2. Request access: https://huggingface.co/stabilityai/stable-diffusion-3.5-large")
+    print("2. SDXL models are publicly available (no special access needed)")
     print("3. Create token: https://huggingface.co/settings/tokens")
     
     token = input("\n🔑 Enter your HuggingFace token: ").strip()

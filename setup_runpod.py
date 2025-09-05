@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""RunPod Setup Script for SD3.5 Large LoRA Training System"""
+"""RunPod Setup Script for SDXL LoRA Training System"""
 
 import os
 import subprocess
@@ -72,13 +72,13 @@ cd /workspace/sd3-large-docker
 poetry run python main.py
 """
     
-    with open("/workspace/start_sd3.sh", "w") as f:
+    with open("/workspace/start_sdxl.sh", "w") as f:
         f.write(script)
-    Path("/workspace/start_sd3.sh").chmod(0o755)
+    Path("/workspace/start_sdxl.sh").chmod(0o755)
 
 def main():
     """Main setup function."""
-    print("🎯 SD3.5 Large - RunPod Setup")
+    print("🎯 SDXL - RunPod Setup")
     
     if not setup_workspace():
         sys.exit(1)
@@ -87,7 +87,7 @@ def main():
     create_startup_script()
     
     print("🎉 Setup complete!")
-    print("Start server: /workspace/start_sd3.sh")
+    print("Start server: /workspace/start_sdxl.sh")
 
 
 if __name__ == "__main__":

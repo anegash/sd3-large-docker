@@ -1,8 +1,8 @@
 #!/bin/bash
-# SD3.5 Large - RunPod Startup Script
+# SDXL - RunPod Startup Script
 set -e
 
-echo "🚀 Starting SD3.5 Large API..."
+echo "🚀 Starting SDXL API..."
 
 # Set environment variables
 export HF_HOME=/workspace/huggingface_cache

@@ -1,4 +1,4 @@
-"""FastAPI application for SD3 image generation."""
+"""FastAPI application for SDXL image generation."""
 
 import asyncio
 import base64
@@ -16,7 +16,7 @@ from .models import (
     TrainLoRARequest, TrainLoRAResponse, LoRAListResponse,
     UploadImagesRequest, UploadImagesResponse, ImagesStatusResponse, ImagesListResponse
 )
-from .pipeline import SD3Pipeline
+from .pipeline import SDXLPipeline
 
 logger = logging.getLogger(__name__)
 
@@ -31,37 +31,37 @@ async def lifespan(app: FastAPI):
 
 # Initialize FastAPI app
 app = FastAPI(
-    title="SD3 Large API",
-    description="Stable Diffusion 3.5 Large image generation service",
+    title="SDXL API",
+    description="Stable Diffusion XL image generation service with LoRA training",
     version="0.1.0",
     lifespan=lifespan,
 )
 
 # Global pipeline instance 
-pipeline: Optional[SD3Pipeline] = None
+pipeline: Optional[SDXLPipeline] = None
 
-def get_pipeline() -> SD3Pipeline:
-    """Get the global pipeline instance."""
+def get_pipeline() -> SDXLPipeline:
+    """Get the global SDXL pipeline instance."""
     global pipeline
     if pipeline is None:
-        raise RuntimeError("Pipeline not initialized")
+        raise RuntimeError("SDXL pipeline not initialized")
     return pipeline
 
 async def load_pipeline_async():
-    """Load the pipeline in a background task."""
+    """Load the SDXL pipeline in a background task."""
     global pipeline
     try:
-        logger.info("Starting model loading in background...")
+        logger.info("Starting SDXL model loading in background...")
         # Create pipeline without eager loading first
-        pipeline = SD3Pipeline(eager_load=False)
+        pipeline = SDXLPipeline(eager_load=False)
         # Then initialize it
         await asyncio.get_event_loop().run_in_executor(None, pipeline.initialize_async)
-        logger.info("Model loading completed successfully")
+        logger.info("SDXL model loading completed successfully")
     except Exception as e:
-        logger.error(f"Failed to load model: {e}")
+        logger.error(f"Failed to load SDXL model: {e}")
         # Keep the pipeline object so we can show the error status
         if pipeline is None:
-            pipeline = SD3Pipeline(eager_load=False)
+            pipeline = SDXLPipeline(eager_load=False)
             pipeline.load_error = str(e)
 
 
@@ -76,7 +76,7 @@ async def health_check() -> HealthResponse:
         status = pipeline.status
     
     return HealthResponse(
-        message="Stable Diffusion 3.5 API is running!",
+        message="Stable Diffusion XL API is running!",
         device=status
     )
 
@@ -84,8 +84,10 @@ async def health_check() -> HealthResponse:
 @app.get("/generate", response_model=Union[GenerateResponse, ErrorResponse])
 async def generate_image(
     prompt: str = Query(..., description="Text prompt for image generation"),
-    steps: int = Query(15, ge=1, le=150, description="Number of inference steps"),
+    steps: int = Query(20, ge=1, le=150, description="Number of inference steps"),
     guidance: float = Query(7.5, ge=1.0, le=15.0, description="Guidance scale"),
+    width: int = Query(1024, ge=512, le=2048, description="Image width (divisible by 8)"),
+    height: int = Query(1024, ge=512, le=2048, description="Image height (divisible by 8)"),
     person_id: Optional[str] = Query(None, description="Person ID for LoRA weights")
 ) -> Union[GenerateResponse, ErrorResponse]:
     """Generate an image from a text prompt."""
@@ -108,6 +110,8 @@ async def generate_image(
             prompt=prompt,
             num_inference_steps=steps,
             guidance_scale=guidance,
+            width=width,
+            height=height,
             person_id=person_id
         )
         
@@ -137,6 +141,8 @@ async def generate_image_post(
         prompt=request.prompt,
         steps=request.steps,
         guidance=request.guidance,
+        width=request.width,
+        height=request.height,
         person_id=request.person_id
     )
 

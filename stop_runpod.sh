@@ -1,7 +1,7 @@
 #!/bin/bash
-# SD3.5 Large - Stop Server Script
+# SDXL - Stop Server Script
 
-echo "🛑 Stopping SD3 server..."
+echo "🛑 Stopping SDXL server..."
 
 PID_FILE="/workspace/logs/server.pid"
 

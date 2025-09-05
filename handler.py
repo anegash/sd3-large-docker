@@ -1,12 +1,12 @@
 """
-RunPod serverless handler for Stable Diffusion 3.5 Large image generation.
+RunPod serverless handler for Stable Diffusion XL image generation.
 """
 import runpod
 import torch
 from PIL import Image
 import io
 import base64
-from src.sd3_api.pipeline import SD3Pipeline
+from src.sd3_api.pipeline import SDXLPipeline
 from src.sd3_api.models import GenerateRequest
 from src.sd3_api.config import DEFAULT_STEPS, DEFAULT_GUIDANCE
 
@@ -15,11 +15,11 @@ pipeline = None
 
 
 def initialize():
-    """Initialize the SD3 pipeline on cold start."""
+    """Initialize the SDXL pipeline on cold start."""
     global pipeline
     if pipeline is None:
-        pipeline = SD3Pipeline()
-        pipeline.load_model()
+        pipeline = SDXLPipeline()
+        pipeline._initialize_pipeline()
     return pipeline
 
 
@@ -50,21 +50,25 @@ def generate_image(job):
             steps=job_input.get("steps", DEFAULT_STEPS),
             guidance=job_input.get("guidance", DEFAULT_GUIDANCE),
             width=job_input.get("width", 1024),
-            height=job_input.get("height", 1024),
-            seed=job_input.get("seed")
+            height=job_input.get("height", 1024)
         )
         
-        # Generate image
-        result = pipe.generate(request)
+        # Generate image using SDXL
+        image = pipe.generate_image(
+            prompt=request.prompt,
+            num_inference_steps=request.steps,
+            guidance_scale=request.guidance,
+            width=request.width,
+            height=request.height
+        )
         
         # Convert PIL image to base64
         buffer = io.BytesIO()
-        result.image.save(buffer, format="PNG")
+        image.save(buffer, format="PNG")
         image_base64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
         
         return {
             "image": image_base64,
-            "seed": result.seed,
             "format": "png",
             "width": request.width,
             "height": request.height,

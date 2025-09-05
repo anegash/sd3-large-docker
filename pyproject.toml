@@ -3,16 +3,16 @@ requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
-name = "sd3-large-api"
+name = "sdxl-api"
 version = "0.1.0"
-description = "Stable Diffusion 3.5 Large API service with multi-platform GPU support"
+description = "Stable Diffusion XL API service with LoRA training and multi-platform GPU support"
 authors = ["Your Name <your.email@example.com>"]
 license = "MIT"
 readme = "README.md"
 packages = [{include = "sd3_api", from = "src"}]
-homepage = "https://github.com/yourusername/sd3-large-docker"
-repository = "https://github.com/yourusername/sd3-large-docker"
-keywords = ["stable-diffusion", "ai", "image-generation", "fastapi"]
+homepage = "https://github.com/yourusername/sdxl-docker"
+repository = "https://github.com/yourusername/sdxl-docker"
+keywords = ["stable-diffusion", "sdxl", "ai", "image-generation", "fastapi", "lora"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -49,7 +49,7 @@ flake8 = "^6.0"
 mypy = "^1.5"
 
 [tool.poetry.scripts]
-sd3-api = "sd3_api.api:app"
+sdxl-api = "sd3_api.api:app"
 
 [tool.black]
 line-length = 88
