@@ -117,159 +117,208 @@ class LoRATrainer:
         learning_rate: float = 1e-4,
     ) -> None:
         """
-        Stable LoRA training approach - creates personalized weights that work.
+        Real LoRA training using actual gradient descent on the images.
         """
+        import torch
+        import torch.nn.functional as F
+        from torch.optim import AdamW
+        from torch.utils.data import Dataset, DataLoader
+        import torchvision.transforms as transforms
+        import json
+        import random
+        import numpy as np
+        
         try:
-            logger.info(f"Training personalized LoRA for {person_id} with {len(images)} images")
+            logger.info(f"Starting REAL LoRA training for {person_id} with {len(images)} images")
             
-            import torch
-            import json
-            import time
-            import hashlib
-            import torchvision.transforms as transforms
-            
+            # Create unique token for this person
             unique_token = f"sks {person_id}"
+            
             device = pipeline.device
+            dtype = pipeline.unet.dtype if hasattr(pipeline.unet, 'dtype') else torch.float16
             
-            # Process and analyze the training images
-            transform = transforms.Compose([
-                transforms.Resize((1024, 1024)),
-                transforms.ToTensor(),
-                transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])
-            ])
+            # Ensure all pipeline components are on the same device
+            pipeline.vae = pipeline.vae.to(device)
+            pipeline.text_encoder = pipeline.text_encoder.to(device) 
+            pipeline.text_encoder_2 = pipeline.text_encoder_2.to(device)
+            pipeline.unet = pipeline.unet.to(device)
             
-            # Extract features from training images
-            image_features = []
-            for i, image in enumerate(images):
-                if image.mode != "RGB":
-                    image = image.convert("RGB")
-                
-                # Convert to tensor and get basic statistics
-                img_tensor = transform(image)
-                features = {
-                    'mean': img_tensor.mean(dim=[1,2]).tolist(),
-                    'std': img_tensor.std(dim=[1,2]).tolist(),
-                    'brightness': img_tensor.mean().item(),
-                    'contrast': img_tensor.std().item()
-                }
-                image_features.append(features)
-                
-                if (i + 1) % 5 == 0:
-                    logger.info(f"Analyzed {i + 1}/{len(images)} images")
+            # Create training dataset
+            class PersonDataset(Dataset):
+                def __init__(self, images, prompts):
+                    self.images = images
+                    self.prompts = prompts
+                    self.transform = transforms.Compose([
+                        transforms.Resize((1024, 1024), interpolation=transforms.InterpolationMode.BILINEAR),
+                        transforms.ToTensor(),
+                        transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])
+                    ])
+                    
+                def __len__(self):
+                    return len(self.images) * 3  # Repeat each image 3x with different prompts
+                    
+                def __getitem__(self, idx):
+                    img_idx = idx % len(self.images)
+                    prompt_idx = idx % len(self.prompts)
+                    
+                    image = self.images[img_idx]
+                    if image.mode != "RGB":
+                        image = image.convert("RGB")
+                        
+                    pixel_values = self.transform(image)
+                    return {
+                        "pixel_values": pixel_values,
+                        "prompt": self.prompts[prompt_idx]
+                    }
             
-            # Create training simulation with progress
-            steps = min(num_train_epochs, 25)
-            for step in range(steps):
-                progress = (step + 1) / steps
-                
-                # Simulate realistic training curve
-                base_loss = 0.8
-                min_loss = 0.05
-                loss = base_loss * (1 - progress**1.5) + min_loss
-                
-                logger.info(f"Training step {step + 1}/{steps} - Loss: {loss:.4f}")
-                time.sleep(0.3)  # Brief computation time
-                
-                if (step + 1) % 8 == 0:
-                    logger.info(f"Training progress: {int(progress * 100)}%")
-            
-            # Generate personalized LoRA weights based on image analysis
-            logger.info("Generating personalized LoRA weights...")
-            
-            # Create seed from image features for consistency
-            feature_str = json.dumps(image_features, sort_keys=True)
-            seed = int(hashlib.md5(feature_str.encode()).hexdigest()[:8], 16)
-            torch.manual_seed(seed)
-            
-            # Create LoRA weights optimized for this person's features
-            lora_weights = {}
-            
-            # Key attention layers that affect facial features
-            layer_configs = [
-                ("down_blocks.0.attentions.0.transformer_blocks.0.attn1.to_k", 320),
-                ("down_blocks.0.attentions.0.transformer_blocks.0.attn1.to_q", 320),
-                ("down_blocks.0.attentions.0.transformer_blocks.0.attn1.to_v", 320),
-                ("down_blocks.1.attentions.0.transformer_blocks.0.attn1.to_k", 640),
-                ("down_blocks.1.attentions.0.transformer_blocks.0.attn1.to_q", 640),
-                ("down_blocks.1.attentions.0.transformer_blocks.0.attn1.to_v", 640),
-                ("mid_block.attentions.0.transformer_blocks.0.attn1.to_k", 1280),
-                ("mid_block.attentions.0.transformer_blocks.0.attn1.to_q", 1280),
-                ("mid_block.attentions.0.transformer_blocks.0.attn1.to_v", 1280),
+            # Create training prompts for this person
+            training_prompts = [
+                f"a photo of {unique_token}",
+                f"a portrait of {unique_token}", 
+                f"{unique_token} person",
+                f"a picture of {unique_token}",
+                f"{unique_token} looking at camera",
+                f"a headshot of {unique_token}",
+                f"{unique_token} smiling",
+                f"professional photo of {unique_token}"
             ]
             
-            lora_rank = 32
-            lora_alpha = 32
+            # Create dataset and dataloader
+            dataset = PersonDataset(images, training_prompts)
+            dataloader = DataLoader(dataset, batch_size=1, shuffle=True)
             
-            # Generate weights that encode facial characteristics
-            avg_brightness = sum(f['brightness'] for f in image_features) / len(image_features)
-            avg_contrast = sum(f['contrast'] for f in image_features) / len(image_features)
+            logger.info(f"Created dataset with {len(dataset)} training samples")
             
-            for layer_name, dim in layer_configs:
-                # Weights influenced by image characteristics
-                brightness_factor = (avg_brightness - 0.5) * 0.1  # Center around 0
-                contrast_factor = avg_contrast * 0.05
+            # Add LoRA layers to UNet
+            from peft import LoraConfig, get_peft_model, TaskType
+            
+            lora_config = LoraConfig(
+                r=16,  # Lower rank for stability
+                lora_alpha=16,
+                target_modules=["to_k", "to_q", "to_v", "to_out.0"],
+                lora_dropout=0.0,
+                bias="none",
+                task_type="FEATURE_EXTRACTION"
+            )
+            
+            # Apply LoRA to UNet
+            pipeline.unet = get_peft_model(pipeline.unet, lora_config)
+            pipeline.unet.train()
+            
+            # Setup optimizer - only train LoRA parameters
+            lora_params = [p for p in pipeline.unet.parameters() if p.requires_grad]
+            optimizer = AdamW(lora_params, lr=learning_rate, weight_decay=0.01)
+            
+            logger.info(f"Training {len(lora_params)} LoRA parameters")
+            
+            # Training loop
+            num_epochs = min(num_train_epochs, 20)  # Limit epochs for reasonable time
+            global_step = 0
+            
+            for epoch in range(num_epochs):
+                epoch_loss = 0.0
+                num_batches = 0
                 
-                # LoRA A matrix (down projection)
-                lora_A = torch.randn(lora_rank, dim) * 0.02
-                lora_A += torch.ones_like(lora_A) * brightness_factor * 0.01
+                for batch in dataloader:
+                    # Get pixel values and prompt
+                    pixel_values = batch["pixel_values"].to(device, dtype=dtype)
+                    prompt = batch["prompt"][0] if isinstance(batch["prompt"], list) else batch["prompt"]
+                    
+                    # Encode text prompt using pipeline's method
+                    with torch.no_grad():
+                        (
+                            prompt_embeds,
+                            negative_prompt_embeds,
+                            pooled_prompt_embeds,
+                            negative_pooled_prompt_embeds,
+                        ) = pipeline.encode_prompt(
+                            prompt,
+                            device=device,
+                            num_images_per_prompt=1,
+                            do_classifier_free_guidance=False
+                        )
+                        # Use only the positive prompt embeddings
+                        prompt_embeds = prompt_embeds
+                    
+                    # Convert to latents - ensure VAE is on correct device
+                    with torch.no_grad():
+                        # Make sure VAE is on the same device
+                        pipeline.vae = pipeline.vae.to(device)
+                        latents = pipeline.vae.encode(pixel_values).latent_dist.sample()
+                        latents = latents * pipeline.vae.config.scaling_factor
+                    
+                    # Sample random timestep
+                    timesteps = torch.randint(
+                        0, pipeline.scheduler.config.num_train_timesteps, 
+                        (latents.shape[0],), device=device
+                    ).long()
+                    
+                    # Add noise
+                    noise = torch.randn_like(latents)
+                    noisy_latents = pipeline.scheduler.add_noise(latents, noise, timesteps)
+                    
+                    # Predict noise
+                    model_pred = pipeline.unet(
+                        noisy_latents,
+                        timesteps,
+                        encoder_hidden_states=prompt_embeds
+                    ).sample
+                    
+                    # Calculate loss
+                    loss = F.mse_loss(model_pred, noise)
+                    
+                    # Backward pass
+                    optimizer.zero_grad()
+                    loss.backward()
+                    optimizer.step()
+                    
+                    epoch_loss += loss.item()
+                    num_batches += 1
+                    global_step += 1
                 
-                # LoRA B matrix (up projection) 
-                lora_B = torch.randn(dim, lora_rank) * 0.02
-                lora_B += torch.ones_like(lora_B) * contrast_factor * 0.01
+                avg_loss = epoch_loss / num_batches if num_batches > 0 else 0
+                logger.info(f"Epoch {epoch + 1}/{num_epochs} - Average Loss: {avg_loss:.6f}")
                 
-                lora_weights[f"{layer_name}.lora_A.weight"] = lora_A
-                lora_weights[f"{layer_name}.lora_B.weight"] = lora_B
+                if (epoch + 1) % 5 == 0:
+                    logger.info(f"Training progress: {int((epoch + 1) / num_epochs * 100)}%")
+            
+            logger.info("LoRA training completed! Saving weights...")
             
             # Save LoRA weights
             lora_save_dir = self.lora_weights_dir / person_id
             lora_save_dir.mkdir(parents=True, exist_ok=True)
             
-            torch.save(lora_weights, lora_save_dir / "pytorch_lora_weights.bin")
-            
-            # Create adapter config
-            adapter_config = {
-                "base_model_name_or_path": "stabilityai/stable-diffusion-xl-base-1.0",
-                "lora_alpha": lora_alpha,
-                "lora_dropout": 0.0,
-                "r": lora_rank,
-                "target_modules": ["to_k", "to_q", "to_v"],
-                "task_type": "FEATURE_EXTRACTION",
-            }
-            
-            with open(lora_save_dir / "adapter_config.json", "w") as f:
-                json.dump(adapter_config, f, indent=2)
+            # Save the trained LoRA model
+            pipeline.unet.save_pretrained(lora_save_dir)
             
             # Save training metadata
             training_info = {
-                "model_version": "sdxl-lora-personalized-v4",
-                "base_model": "stabilityai/stable-diffusion-xl-base-1.0",
+                "model_version": "sdxl-lora-real-v3",
+                "base_model": "stabilityai/stable-diffusion-xl-base-1.0", 
                 "unique_token": unique_token,
                 "num_images": len(images),
-                "training_steps": steps,
+                "num_training_samples": len(dataset),
+                "training_epochs": num_epochs,
                 "learning_rate": learning_rate,
-                "lora_rank": lora_rank,
-                "personalization_seed": seed,
-                "image_analysis": {
-                    "avg_brightness": avg_brightness,
-                    "avg_contrast": avg_contrast,
-                    "num_analyzed": len(image_features)
-                }
+                "lora_rank": lora_config.r,
+                "target_modules": lora_config.target_modules,
+                "global_steps": global_step
             }
             
             with open(lora_save_dir / "training_info.json", "w") as f:
                 json.dump(training_info, f, indent=2)
-                
-            # Save metadata
+            
+            # Save training metadata
             self._save_training_metadata(
-                person_id, len(images), steps, learning_rate
+                person_id, len(images), num_epochs, learning_rate
             )
             
-            logger.info(f"Personalized LoRA training completed for {person_id}")
-            logger.info(f"Created {len(lora_weights)} weight matrices")
-            logger.info(f"Use token '{unique_token}' in prompts for personalization")
+            logger.info(f"Real LoRA training completed for {person_id}!")
+            logger.info(f"Trained for {global_step} steps across {num_epochs} epochs")
+            logger.info(f"Use token '{unique_token}' in prompts for best results")
             
         except Exception as e:
-            logger.error(f"LoRA training failed: {e}")
+            logger.error(f"Real LoRA training failed: {e}")
             import traceback
             logger.error(traceback.format_exc())
             raise
