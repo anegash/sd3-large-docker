@@ -82,11 +82,14 @@ class SDXLPipeline:
             # Enable memory efficient attention and CPU offloading for RunPod
             if hasattr(self.pipeline, 'enable_memory_efficient_attention'):
                 self.pipeline.enable_memory_efficient_attention()
-            if hasattr(self.pipeline, 'enable_model_cpu_offload'):
-                self.pipeline.enable_model_cpu_offload()
             
-            # Move to device
-            self.pipeline.to(self.device)
+            # Use either CPU offloading OR manual GPU placement, not both
+            if hasattr(self.pipeline, 'enable_model_cpu_offload') and self.device != "cpu":
+                # Use automatic offloading for memory efficiency
+                self.pipeline.enable_model_cpu_offload()
+            else:
+                # Manual GPU placement when offloading not available or on CPU
+                self.pipeline.to(self.device)
             
             # Optionally load refiner (disabled for memory efficiency)
             if self.use_refiner and self.device != "cpu":
