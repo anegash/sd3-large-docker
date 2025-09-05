@@ -237,12 +237,12 @@ class LoRATrainer:
             from peft import LoraConfig, get_peft_model, TaskType
             
             lora_config = LoraConfig(
-                r=16,  # Lower rank for stability
-                lora_alpha=16,
-                target_modules=["to_k", "to_q", "to_v", "to_out.0"],
+                r=8,  # Even lower rank for stability
+                lora_alpha=8,
+                target_modules=["to_q", "to_v"],  # Minimal target modules to reduce conflicts
                 lora_dropout=0.0,
                 bias="none",
-                task_type="FEATURE_EXTRACTION"
+                task_type=TaskType.FEATURE_EXTRACTION  # Use enum instead of string
             )
             
             # Apply LoRA to UNet
@@ -286,21 +286,27 @@ class LoRATrainer:
                     noise = torch.randn_like(latents)
                     noisy_latents = pipeline.scheduler.add_noise(latents, noise, timesteps)
                     
-                    # Predict noise with very explicit parameter handling
-                    # Create a clean parameter dict to avoid any variable pollution
-                    unet_kwargs = {
-                        'sample': noisy_latents,
-                        'timestep': timesteps, 
-                        'encoder_hidden_states': prompt_embeds,
-                        'return_dict': False
-                    }
-                    
-                    # Force garbage collection to clear any lingering variables
+                    # Try calling UNet with positional arguments only to avoid any kwargs issues
+                    # Force garbage collection first
                     import gc
                     gc.collect()
                     
-                    # Call UNet with explicit parameters only
-                    model_pred = pipeline.unet(**unet_kwargs)[0]
+                    # Call UNet with positional args and minimal kwargs
+                    try:
+                        model_pred = pipeline.unet(
+                            noisy_latents,  # sample (positional)
+                            timesteps,      # timestep (positional) 
+                            prompt_embeds,  # encoder_hidden_states (positional)
+                            return_dict=False
+                        )[0]
+                    except Exception as e:
+                        logger.error(f"UNet call failed with positional args: {e}")
+                        # Fallback: try with minimal explicit kwargs
+                        model_pred = pipeline.unet.forward(
+                            sample=noisy_latents,
+                            timestep=timesteps,
+                            encoder_hidden_states=prompt_embeds
+                        ).sample
                     
                     # Calculate loss
                     loss = F.mse_loss(model_pred, noise)
