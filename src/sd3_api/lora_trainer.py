@@ -192,7 +192,7 @@ class LoRATrainer:
                     "learning_rate": learning_rate,
                     "image_resolution": "1024x1024",
                     "training_quality": "enhanced",
-                    "target_modules": self.lora_config.target_modules,
+                    "target_modules": list(self.lora_config.target_modules) if isinstance(self.lora_config.target_modules, set) else self.lora_config.target_modules,
                     "lora_rank": self.lora_config.r
                 }
                 
