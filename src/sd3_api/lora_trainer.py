@@ -266,12 +266,13 @@ class LoRATrainer:
                     noise = torch.randn_like(latents)
                     noisy_latents = pipeline.scheduler.add_noise(latents, noise, timesteps)
                     
-                    # Predict noise
+                    # Predict noise with explicit parameters only
                     model_pred = pipeline.unet(
-                        noisy_latents,
-                        timesteps,
-                        encoder_hidden_states=prompt_embeds
-                    ).sample
+                        sample=noisy_latents,
+                        timestep=timesteps,
+                        encoder_hidden_states=prompt_embeds,
+                        return_dict=False
+                    )[0]
                     
                     # Calculate loss
                     loss = F.mse_loss(model_pred, noise)
