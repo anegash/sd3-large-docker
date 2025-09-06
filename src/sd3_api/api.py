@@ -46,14 +46,14 @@ def get_version_info() -> dict:
         ).strip()
         
         return {
-            "version": "1.1.0",  # API version - increment for each push
+            "version": "1.1.1",  # API version - increment for each push
             "branch": branch,
             "commit": commit
         }
     except Exception as e:
         logger.warning(f"Failed to get git info: {e}")
         return {
-            "version": "1.1.0",
+            "version": "1.1.1",
             "branch": "unknown", 
             "commit": "unknown"
         }

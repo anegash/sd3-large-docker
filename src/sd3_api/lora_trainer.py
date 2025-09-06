@@ -427,6 +427,24 @@ class LoRATrainer:
                 person_id, len(images), num_epochs, learning_rate
             )
             
+            # CRITICAL: Reset UNet to eval mode and reload original for inference
+            logger.info("Resetting UNet to eval mode and reloading original pipeline...")
+            
+            # Set to eval mode first
+            pipeline.unet.eval()
+            
+            # Reload the original UNet to prevent NaN issues during inference
+            from diffusers import UNet2DConditionModel
+            original_unet = UNet2DConditionModel.from_pretrained(
+                pipeline.scheduler.config._name_or_path if hasattr(pipeline.scheduler.config, '_name_or_path') else "stabilityai/stable-diffusion-xl-base-1.0",
+                subfolder="unet",
+                torch_dtype=pipeline.unet.dtype
+            ).to(pipeline.device)
+            
+            # Replace with fresh UNet for clean inference
+            pipeline.unet = original_unet
+            logger.info("Pipeline UNet reset for clean inference")
+            
             logger.info(f"Real LoRA training completed for {person_id}!")
             logger.info(f"Trained for {global_step} steps across {num_epochs} epochs")
             logger.info(f"Use token '{unique_token}' in prompts for best results")
