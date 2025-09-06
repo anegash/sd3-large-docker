@@ -329,9 +329,9 @@ class SDXLPipeline:
                             except Exception as e:
                                 logger.warning(f"Legacy loading failed: {e}")
                                 self.current_lora_id = person_id
-                    else:
-                        logger.info(f"No LoRA weights found for {person_id}, using token only")
-                        self.current_lora_id = person_id
+                        else:
+                            logger.info(f"No LoRA weights found for {person_id}, using token only")
+                            self.current_lora_id = person_id
             else:
                 logger.info(f"No LoRA directory for {person_id}")
                 self.current_lora_id = person_id
