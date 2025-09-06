@@ -286,6 +286,20 @@ class LoRATrainer:
             pipeline.unet.train()
             use_peft_lora = False
             
+            # Setup noise scheduler for training
+            from diffusers import DDPMScheduler
+            noise_scheduler = DDPMScheduler.from_pretrained(
+                pipeline.scheduler.config._name_or_path,
+                subfolder="scheduler"
+            ) if hasattr(pipeline.scheduler.config, '_name_or_path') else DDPMScheduler(
+                num_train_timesteps=1000,
+                beta_start=0.00085,
+                beta_end=0.012,
+                beta_schedule="scaled_linear",
+                trained_betas=None,
+                clip_sample=False
+            )
+            
             # Setup optimizer - only train unfrozen parameters
             optimizer = AdamW(trainable_params, lr=learning_rate, weight_decay=0.01)
             
@@ -329,13 +343,13 @@ class LoRATrainer:
                     
                     # Sample random timestep
                     timesteps = torch.randint(
-                        0, pipeline.scheduler.config.num_train_timesteps, 
+                        0, noise_scheduler.config.num_train_timesteps, 
                         (latents.shape[0],), device=device
                     ).long()
                     
                     # Add noise
                     noise = torch.randn_like(latents)
-                    noisy_latents = pipeline.scheduler.add_noise(latents, noise, timesteps)
+                    noisy_latents = noise_scheduler.add_noise(latents, noise, timesteps)
                     
                     # Call UNet with SDXL-specific conditioning parameters
                     if use_peft_lora:
